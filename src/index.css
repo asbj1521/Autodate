@@ -4,18 +4,26 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Warm, slightly off-white page background for a calm feel. */
+    --background: 40 33% 97%;
+    --foreground: 220 25% 16%;
+
+    /* Cards are pure white so they pop against the toned background. */
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --border: 214.3 31.8% 91.4%;
-    --radius: 0.5rem;
+    --card-foreground: 220 25% 16%;
+
+    /* One dominant accent — coral/orange — used for logo, CTA, and heatmap. */
+    --primary: 20 90% 48%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 40 20% 93%;
+    --secondary-foreground: 220 25% 16%;
+
+    --muted: 40 20% 94%;
+    --muted-foreground: 220 12% 46%;
+
+    --border: 220 14% 90%;
+    --radius: 0.75rem;
   }
 
   * {
@@ -25,5 +33,6 @@
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
   }
 }
