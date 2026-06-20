@@ -66,6 +66,17 @@ export interface Participant {
   busy: BusyInterval[];
 }
 
+/**
+ * A named circle of friends a user schedules with — "The highschool group",
+ * "Work team", etc. One profile can belong to many groups, and an event is
+ * always created for exactly one group.
+ */
+export interface FriendGroup {
+  id: string;
+  name: string;
+  participants: Participant[];
+}
+
 /** An event someone is trying to schedule. */
 export interface Event {
   id: string;
