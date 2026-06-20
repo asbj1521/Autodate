@@ -21,6 +21,20 @@ export type CalendarProvider = "google" | "outlook" | "apple";
  */
 export type CalendarPurpose = "work" | "school" | "personal" | "other";
 
+/**
+ * A coarse category for a busy block, used for colouring/filtering in our fake
+ * test data. Real free/busy feeds won't include this (nor a title) — both are
+ * optional so the same `BusyInterval` shape covers mock and real data.
+ */
+export type EventCategory =
+  | "work"
+  | "school"
+  | "social"
+  | "health"
+  | "travel"
+  | "personal"
+  | "family";
+
 /** A person using Autodate. */
 export interface Profile {
   id: string;
@@ -56,6 +70,10 @@ export interface BusyInterval {
   end: string;
   /** Which calendar this busy block came from (for debugging / filtering). */
   calendarId?: string;
+  /** Optional human-readable title (present in fake/test data; real free/busy omits it). */
+  title?: string;
+  /** Optional category, for colouring/filtering in test data. */
+  category?: EventCategory;
 }
 
 /** A person invited to an event, plus their aggregated busy time. */

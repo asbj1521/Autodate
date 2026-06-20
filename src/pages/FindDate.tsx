@@ -4,6 +4,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Copy,
   Hourglass,
@@ -21,9 +23,10 @@ import {
   DAY_END,
   DAY_START,
   getMockGroups,
+  SEARCH_WINDOW,
 } from "@/api/mockData";
 import { findEarliestSlot } from "@/lib/availability";
-import { buildRangeGrid } from "@/lib/heatmap";
+import { buildMonthGrid } from "@/lib/heatmap";
 import { formatSlot } from "@/lib/format";
 import type { FriendGroup, SchedulingResult } from "@/types";
 import { cn } from "@/lib/utils";
@@ -35,6 +38,42 @@ const ACCENT_RGB = "249, 115, 22";
 const TODAY_DAY = new Date(
   Math.floor(Date.now() / 86_400_000) * 86_400_000,
 ).toISOString();
+
+const DAY_MS = 86_400_000;
+
+/** First-of-month (UTC ms) for a given instant. */
+const monthStartMs = (ms: number) => {
+  const d = new Date(ms);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+};
+
+/** First-of-month (UTC ms) for the month containing today — the default view. */
+const DEFAULT_MONTH = monthStartMs(Date.parse(TODAY_DAY));
+/** Navigable month range: from this month up to the last month with data. */
+const MIN_MONTH = Math.max(
+  DEFAULT_MONTH,
+  monthStartMs(Date.parse(SEARCH_WINDOW.start)),
+);
+const MAX_MONTH = monthStartMs(Date.parse(SEARCH_WINDOW.end) - 1);
+
+/**
+ * Horizontal slide + motion-blur used when the calendar pages to a new date
+ * range. Moving forward in time, the new range sweeps in from the right while
+ * the old one blurs off to the left; `dir` flips it for going back.
+ */
+const calendarSlide = {
+  enter: (dir: number) => ({
+    x: dir >= 0 ? "55%" : "-55%",
+    opacity: 0,
+    filter: "blur(14px)",
+  }),
+  center: { x: "0%", opacity: 1, filter: "blur(0px)" },
+  exit: (dir: number) => ({
+    x: dir >= 0 ? "-55%" : "55%",
+    opacity: 0,
+    filter: "blur(14px)",
+  }),
+};
 
 /** Stable colours for the group-member avatars. */
 const AVATAR_COLORS = [
@@ -301,10 +340,11 @@ function GroupSwitcher({
 
 /**
  * The product card's calendar. A clean light month grid that fits the website,
- * taking just a hint from Apple Calendar: thin gridlines, six rows, day numbers
- * in the corner, dimmed spill-over days, today circled, and availability shown
- * as a small event-style row (a coloured tick + "n/7 free"), with the best
- * meeting day rendered as a solid accent bar so it stands out.
+ * taking just a hint from Apple Calendar: thin gridlines, Monday-first columns,
+ * day numbers in the corner, muted spill-over days from neighbouring months,
+ * past days kept in colour but dimmed under a grey veil, today circled, and
+ * availability shown as a small event-style row (a coloured tick + "n/7 free"),
+ * with the best meeting day rendered as a solid accent bar so it stands out.
  */
 function CalendarPanel({
   grid,
@@ -336,9 +376,10 @@ function CalendarPanel({
         {grid.weeks.flat().map((cell) => {
           const frac = grid.total === 0 ? 0 : cell.freeCount / grid.total;
           const isToday = cell.date === todayDay;
-          // Out-of-range = past days or days beyond the window: dead, greyed.
-          const active = cell.inRange;
-          const isBest = active && cell.date === bestDay;
+          // Spill-over days belong to a neighbouring month; we mute those.
+          const inMonth = cell.inMonth;
+          const isPast = inMonth && cell.isPast;
+          const isBest = inMonth && !cell.isPast && cell.date === bestDay;
           // The 1st of a month is labelled with its abbreviation, e.g. "1. jul.".
           const numberLabel =
             cell.dayOfMonth === 1
@@ -351,10 +392,14 @@ function CalendarPanel({
           return (
             <div
               key={cell.date}
-              title={active ? `${cell.freeCount}/${cell.total} can meet` : undefined}
-              className="min-h-[84px] border-b border-r p-1.5"
+              title={
+                inMonth && !isPast
+                  ? `${cell.freeCount}/${cell.total} can meet`
+                  : undefined
+              }
+              className="relative min-h-[84px] border-b border-r p-1.5"
               style={
-                active && frac > 0
+                inMonth && frac > 0
                   ? {
                       backgroundColor: `rgba(${ACCENT_RGB}, ${(0.06 + 0.3 * frac).toFixed(3)})`,
                     }
@@ -366,8 +411,9 @@ function CalendarPanel({
                 <span
                   className={cn(
                     "inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-xs",
-                    !active && "text-muted-foreground/40",
-                    active && !isToday && "text-foreground",
+                    !inMonth && "text-muted-foreground/40",
+                    inMonth && isPast && "text-muted-foreground",
+                    inMonth && !isPast && !isToday && "text-foreground",
                     isToday && "bg-primary font-semibold text-primary-foreground",
                   )}
                 >
@@ -375,8 +421,8 @@ function CalendarPanel({
                 </span>
               </div>
 
-              {/* Availability shown as a small event (today + future only) */}
-              {active && (
+              {/* Availability event — upcoming days only; past days show colour only */}
+              {inMonth && !isPast && (
                 <div className="mt-1">
                   {isBest ? (
                     <div
@@ -403,6 +449,11 @@ function CalendarPanel({
                   )}
                 </div>
               )}
+
+              {/* Past days keep their colour but get a grey veil laid over the top. */}
+              {isPast && (
+                <div className="pointer-events-none absolute inset-0 bg-zinc-400/35" />
+              )}
             </div>
           );
         })}
@@ -412,12 +463,16 @@ function CalendarPanel({
 }
 
 export default function FindDate() {
-  const [result, setResult] = useState<SchedulingResult | null>(null);
-  const [searching, setSearching] = useState(false);
   const [copied, setCopied] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [durationMinutes, setDurationMinutes] = useState(60);
   const [startHour, setStartHour] = useState(18);
+  // Where to start searching from. null = "from today"; "Find new time" bumps it
+  // forward to surface the next slot after the current one.
+  const [searchFrom, setSearchFrom] = useState<string | null>(null);
+  // Which month the calendar shows (first-of-month ms), and which way it slides.
+  const [viewMonth, setViewMonth] = useState(DEFAULT_MONTH);
+  const [slideDir, setSlideDir] = useState(1);
   const cardRef = useRef<HTMLDivElement>(null);
 
   const { data: groups } = useQuery({
@@ -441,29 +496,17 @@ export default function FindDate() {
   // A rolling calendar starting today: 5 rows of 7 days (35 days).
   const monthGrid = useMemo(() => {
     if (!activeGroup) return null;
-    return buildRangeGrid(
+    const vm = new Date(viewMonth);
+    return buildMonthGrid(
       activeGroup.participants,
-      Date.parse(TODAY_DAY),
-      35,
-      DAY_START,
+      vm.getUTCFullYear(),
+      vm.getUTCMonth(),
+      startHour,
       DAY_END,
+      durationMinutes,
+      Date.parse(TODAY_DAY),
     );
-  }, [activeGroup]);
-
-  function handleSelectGroup(id: string) {
-    setSelectedGroupId(id);
-    setResult(null); // clear stale result when switching groups
-  }
-
-  function handleDuration(value: number) {
-    setDurationMinutes(value);
-    setResult(null); // settings changed — previous result no longer applies
-  }
-
-  function handleStartHour(value: number) {
-    setStartHour(value);
-    setResult(null);
-  }
+  }, [activeGroup, viewMonth, startHour, durationMinutes]);
 
   // Never search the past — start from today (or the window start if later).
   function searchBaseFor(ev: NonNullable<typeof event>): string {
@@ -472,28 +515,77 @@ export default function FindDate() {
       : ev.searchStart;
   }
 
-  function handleFind() {
-    if (!event) return;
-    setSearching(true);
-    setResult(null);
-    setTimeout(() => {
-      setResult(findEarliestSlot({ ...event, searchStart: searchBaseFor(event) }));
-      setSearching(false);
-    }, 650);
+  // The earliest slot the whole group can actually meet, recomputed
+  // automatically whenever the group, duration, start time, or search anchor
+  // changes — so the front page always shows a real, calendar-derived time
+  // without anyone having to press a button.
+  const result = useMemo<SchedulingResult | null>(() => {
+    if (!event) return null;
+    const searchStart = searchFrom ?? searchBaseFor(event);
+    return findEarliestSlot({ ...event, searchStart });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event, searchFrom]);
+
+  function handleSelectGroup(id: string) {
+    setSelectedGroupId(id);
+    setSearchFrom(null); // re-anchor to the earliest slot for the new group
+    setSlideDir(-1);
+    setViewMonth(DEFAULT_MONTH); // show the new group from the current month
   }
 
-  /** Find the next time everyone is free, after the current result's day. */
+  function handleDuration(value: number) {
+    setDurationMinutes(value);
+    setSearchFrom(null); // settings changed — re-anchor to today
+  }
+
+  function handleStartHour(value: number) {
+    setStartHour(value);
+    setSearchFrom(null);
+  }
+
+  /** Midnight-ISO of the day containing an instant. */
+  function dayOf(iso: string): string {
+    return new Date(Math.floor(Date.parse(iso) / DAY_MS) * DAY_MS).toISOString();
+  }
+
+  /**
+   * Page the calendar to the month containing `dayIso`. If that month is already
+   * shown we leave the view alone (no animation); otherwise we slide there —
+   * forward in time sweeps the new month in from the right, back reverses it.
+   */
+  function revealDay(dayIso: string) {
+    const month = monthStartMs(Date.parse(dayIso));
+    if (month === viewMonth) return;
+    setSlideDir(month > viewMonth ? 1 : -1);
+    setViewMonth(month);
+  }
+
+  /** Step the calendar a month back (-1) or forward (+1), within the data range. */
+  function pageMonth(delta: number) {
+    const d = new Date(viewMonth);
+    const month = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + delta, 1);
+    if (month < MIN_MONTH || month > MAX_MONTH) return;
+    setSlideDir(delta);
+    setViewMonth(month);
+  }
+
+  /** Re-find the earliest slot from today and scroll to it if it's off screen. */
+  function handleFindBest() {
+    if (!event) return;
+    setSearchFrom(null);
+    const res = findEarliestSlot({ ...event, searchStart: searchBaseFor(event) });
+    if (res.slot) revealDay(dayOf(res.slot.start));
+  }
+
+  /** Advance the search past the current slot's day to surface the next one. */
   function handleFindNew() {
     if (!event || !result?.slot) return;
-    const dayMs = 86_400_000;
     const nextDay = new Date(
-      Math.floor(Date.parse(result.slot.start) / dayMs) * dayMs + dayMs,
+      Math.floor(Date.parse(result.slot.start) / DAY_MS) * DAY_MS + DAY_MS,
     ).toISOString();
-    setSearching(true);
-    setTimeout(() => {
-      setResult(findEarliestSlot({ ...event, searchStart: nextDay }));
-      setSearching(false);
-    }, 450);
+    setSearchFrom(nextDay);
+    const res = findEarliestSlot({ ...event, searchStart: nextDay });
+    if (res.slot) revealDay(dayOf(res.slot.start));
   }
 
   function handleCreateEvent() {
@@ -632,9 +724,8 @@ export default function FindDate() {
                 {copied ? "Copied!" : "Copy link"}
               </button>
               <button
-                onClick={handleFind}
-                disabled={searching}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:opacity-90 disabled:opacity-60"
+                onClick={handleFindBest}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
               >
                 <Sparkles className="h-4 w-4" />
                 Find best time
@@ -668,8 +759,7 @@ export default function FindDate() {
                     </div>
                     <button
                       onClick={handleFindNew}
-                      disabled={searching}
-                      className="inline-flex items-center gap-1.5 rounded-lg border bg-card px-3 py-2 text-sm font-medium text-foreground transition hover:bg-secondary disabled:opacity-60"
+                      className="inline-flex items-center gap-1.5 rounded-lg border bg-card px-3 py-2 text-sm font-medium text-foreground transition hover:bg-secondary"
                     >
                       <RefreshCw className="h-4 w-4" />
                       Find new time
@@ -677,7 +767,9 @@ export default function FindDate() {
                   </div>
                 ) : (
                   <div className="mt-5 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
-                    No more times work for everyone in this range.
+                    No time works for the whole group at{" "}
+                    {String(startHour).padStart(2, "0")}:00 in this range. Try a
+                    different start time or duration.
                   </div>
                 )}
               </motion.div>
@@ -686,14 +778,48 @@ export default function FindDate() {
 
           {/* Apple-style month calendar */}
           <div className="mt-6">
-            {monthGrid && (
-              <CalendarPanel
-                grid={monthGrid}
-                bestDay={bestDay}
-                bestTimeLabel={bestTimeLabel}
-                todayDay={todayDay}
-              />
-            )}
+            <div className="relative">
+              <div className="overflow-hidden rounded-xl">
+                <AnimatePresence mode="popLayout" custom={slideDir} initial={false}>
+                  <motion.div
+                    key={viewMonth}
+                    custom={slideDir}
+                    variants={calendarSlide}
+                    initial="enter"
+                    animate="center"
+                    exit="exit"
+                    transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+                  >
+                    {monthGrid && (
+                      <CalendarPanel
+                        grid={monthGrid}
+                        bestDay={bestDay}
+                        bestTimeLabel={bestTimeLabel}
+                        todayDay={todayDay}
+                      />
+                    )}
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+
+              {/* Month nav arrows, centred on the calendar's left/right edges */}
+              <button
+                onClick={() => pageMonth(-1)}
+                disabled={viewMonth <= MIN_MONTH}
+                aria-label="Previous month"
+                className="absolute left-0 top-1/2 z-20 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border bg-card text-foreground shadow-md transition hover:bg-secondary disabled:pointer-events-none disabled:opacity-30"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <button
+                onClick={() => pageMonth(1)}
+                disabled={viewMonth >= MAX_MONTH}
+                aria-label="Next month"
+                className="absolute right-0 top-1/2 z-20 flex h-9 w-9 translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border bg-card text-foreground shadow-md transition hover:bg-secondary disabled:pointer-events-none disabled:opacity-30"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            </div>
 
             {/* Legend */}
             <div className="mt-3 flex items-center justify-end gap-2 text-xs text-muted-foreground">
