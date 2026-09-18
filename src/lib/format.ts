@@ -38,3 +38,17 @@ export function formatSlot(start: string, end: string): string {
 export function formatTimeRange(start: string, end: string): string {
   return `${formatTime(start)}–${formatTime(end)}`;
 }
+
+/**
+ * "Mon 5 Oct to Sun 11 Oct" for a whole-day span. `end` is the exclusive
+ * midnight after the span, so the displayed last day is one day earlier.
+ */
+export function formatDaySpan(start: string, end: string): string {
+  const lastDay = new Date(Date.parse(end) - 86_400_000).toISOString();
+  return `${formatDate(start)} to ${formatDate(lastDay)}`;
+}
+
+/** "Fri 25 Sep 17:00 to Sun 27 Sep 21:00" for a trip with concrete times. */
+export function formatTripSpan(start: string, end: string): string {
+  return `${formatDate(start)} ${formatTime(start)} to ${formatDate(end)} ${formatTime(end)}`;
+}

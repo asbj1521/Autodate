@@ -121,10 +121,21 @@ export interface SchedulingConstraints {
    * for now; timezone-aware day windows come later). Defaults to 0.
    */
   earliestHour?: number;
-  /** Latest hour of day a meeting may *end*, 1-24. Defaults to 24. */
+  /**
+   * Latest hour of day a meeting may *end*, 1-24 — or beyond 24 to let the
+   * window spill past midnight (e.g. 26 = 02:00 the next day, for night events).
+   * Defaults to 24.
+   */
   latestHour?: number;
   /** If true, Saturdays and Sundays are excluded. Defaults to false. */
   excludeWeekends?: boolean;
+  /**
+   * Which days of the week may host the event, as UTC day-of-week values
+   * (0 = Sunday … 6 = Saturday). A window is kept if it *starts* on an allowed
+   * day, so a Friday night out that ends 02:00 Saturday counts as Friday.
+   * Omitted = all seven days.
+   */
+  allowedDays?: number[];
 }
 
 /** The result of running the availability engine. */
