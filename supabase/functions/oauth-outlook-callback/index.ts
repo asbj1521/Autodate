@@ -11,6 +11,7 @@
  */
 import { exchangeCodeForTokens, listCalendars, queryFreeBusy } from "../_shared/outlook.ts";
 import { discardIfRepeatedCallback, pruneSupersededConnections } from "../_shared/connections.ts";
+import { encryptionKeyFromEnv, encryptSecret } from "../_shared/secretBox.ts";
 import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
 import { verifyState } from "../_shared/state.ts";
 
@@ -47,6 +48,15 @@ Deno.serve(async (req) => {
   const clientSecret = Deno.env.get("MICROSOFT_OAUTH_CLIENT_SECRET");
   const functionsBaseUrl = Deno.env.get("FUNCTIONS_BASE_URL");
   if (!stateSecret || !clientId || !clientSecret || !functionsBaseUrl) {
+    return redirectToProfile(frontendUrl, { error: "outlook:server_misconfigured" });
+  }
+  // Checked before the user is sent anywhere or anything is written: with no
+  // key there is nowhere safe to put the tokens.
+  let encryptionKey: string;
+  try {
+    encryptionKey = encryptionKeyFromEnv();
+  } catch (err) {
+    console.error("outlook callback cannot encrypt tokens", err);
     return redirectToProfile(frontendUrl, { error: "outlook:server_misconfigured" });
   }
 
@@ -93,8 +103,9 @@ Deno.serve(async (req) => {
 
     const { error: secretErr } = await db.from("calendar_secrets").insert({
       connection_id: connection.id,
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
+      // Encrypted like every stored secret; the database refuses plaintext.
+      access_token: await encryptSecret(tokens.access_token, encryptionKey),
+      refresh_token: await encryptSecret(tokens.refresh_token, encryptionKey),
       expires_at: expiresAt,
     });
     if (secretErr) throw secretErr;

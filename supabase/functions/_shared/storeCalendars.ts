@@ -26,7 +26,7 @@ export interface StoreCalendarsInput {
   provider: "ics" | "apple";
   /** What the profile page shows for the account (a link's name, an email). */
   accountLabel: string | null;
-  /** Columns of calendar_secrets to fill (the ICS url, or the CalDAV login). */
+  /** Columns of calendar_secrets to fill, already encrypted by the caller. */
   secrets: Record<string, string>;
   calendars: CalendarToStore[];
 }

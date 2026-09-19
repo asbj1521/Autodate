@@ -1,6 +1,6 @@
 // Run with: deno test --node-modules-dir=none supabase/functions/_shared/
 import { assert, assertEquals, assertNotEquals, assertRejects } from "jsr:@std/assert@1";
-import { decryptSecret, encryptSecret } from "./secretBox.ts";
+import { decryptSecret, encryptSecret, lookupHash } from "./secretBox.ts";
 
 const newKey = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
 
@@ -46,4 +46,24 @@ Deno.test("a key of the wrong size is refused", async () => {
 Deno.test("an unknown stored format is refused", async () => {
   await assertRejects(() => decryptSecret("v9:aaa:bbb", newKey()), Error, "Unrecognised");
   await assertRejects(() => decryptSecret("plaintext", newKey()), Error, "Unrecognised");
+});
+
+Deno.test("a lookup hash is the same for the same text and key", async () => {
+  const key = newKey();
+  assertEquals(
+    await lookupHash("https://example.com/cal.ics", key),
+    await lookupHash("https://example.com/cal.ics", key),
+  );
+});
+
+Deno.test("a lookup hash differs for different text, or a different key", async () => {
+  const key = newKey();
+  const hash = await lookupHash("https://example.com/a.ics", key);
+  assertNotEquals(hash, await lookupHash("https://example.com/b.ics", key));
+  assertNotEquals(hash, await lookupHash("https://example.com/a.ics", newKey()));
+});
+
+Deno.test("a lookup hash does not contain the text", async () => {
+  const hash = await lookupHash("https://example.com/secret-feed.ics", newKey());
+  assert(!hash.includes("example"));
 });

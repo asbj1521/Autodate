@@ -8,8 +8,8 @@
  *
  * Flow: validate + fetch the feed, strip it down to timing lines and expand
  * it into busy intervals (all in _shared/ics.ts), then store the connection,
- * its one calendar source, the secret link, and the busy blocks (see
- * _shared/storeCalendars.ts). The feed is fully processed before anything is
+ * its one calendar source, the link (encrypted, plus a lookup hash), and the
+ * busy blocks (see _shared/storeCalendars.ts). The feed is fully processed before anything is
  * written, so a bad link leaves no rows.
  * Adding the same link again replaces the earlier connection, which is also
  * how a link is refreshed until there's a background sync job.
@@ -20,6 +20,7 @@ import { callerId } from "../_shared/auth.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { carryOverPurposes } from "../_shared/connections.ts";
 import { assertSafeFeedUrl, fetchFeedText, IcsError, parseBusyIntervals } from "../_shared/ics.ts";
+import { encryptionKeyFromEnv, encryptSecret, lookupHash } from "../_shared/secretBox.ts";
 import { storeCalendars } from "../_shared/storeCalendars.ts";
 import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
 
@@ -71,6 +72,15 @@ Deno.serve(async (req) => {
       ? stripControlChars(rawName).trim().slice(0, MAX_NAME_LENGTH)
       : "";
 
+  // Refuse before fetching anything if there is nowhere safe to keep the link.
+  let encryptionKey: string;
+  try {
+    encryptionKey = encryptionKeyFromEnv();
+  } catch (err) {
+    console.error("calendar-add-ics is not configured", err);
+    return json({ error: "Calendar links aren't set up on the server yet." }, 500);
+  }
+
   // Everything that can fail because of the link happens before any write.
   let feedUrl: URL;
   let parsed: ReturnType<typeof parseBusyIntervals>;
@@ -87,7 +97,10 @@ Deno.serve(async (req) => {
   }
 
   const label = name || parsed.calendarName || feedUrl.hostname;
+  // The link is a bearer secret, so only its encrypted form is stored. The
+  // hash is what finds "this same link, added before" below.
   const normalizedUrl = feedUrl.toString();
+  const urlHash = await lookupHash(normalizedUrl, encryptionKey);
 
   // A feed is one calendar, so it gets a single source.
   let connectionId: string;
@@ -96,7 +109,10 @@ Deno.serve(async (req) => {
       profileId,
       provider: "ics",
       accountLabel: label,
-      secrets: { ics_url: normalizedUrl },
+      secrets: {
+        ics_url: await encryptSecret(normalizedUrl, encryptionKey),
+        ics_url_hash: urlHash,
+      },
       calendars: [{ externalId: "ics", displayName: label, intervals: parsed.intervals }],
     }));
   } catch (err) {
@@ -109,7 +125,7 @@ Deno.serve(async (req) => {
     const { data: older } = await db
       .from("calendar_secrets")
       .select("connection_id, calendar_connections!inner(profile_id, provider)")
-      .eq("ics_url", normalizedUrl)
+      .eq("ics_url_hash", urlHash)
       .eq("calendar_connections.profile_id", profileId)
       .eq("calendar_connections.provider", "ics")
       .neq("connection_id", connectionId);
