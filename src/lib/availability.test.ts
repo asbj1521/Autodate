@@ -14,7 +14,12 @@ import type { Event, EventCategory, Participant } from "@/types";
  * These use fixed UTC instants so the expected results are unambiguous and don't
  * depend on the machine's timezone. A helper builds an Event with sensible
  * defaults so each test only states what it actually cares about.
+ *
+ * Most searches run in the "UTC" zone, where local time and UTC coincide, so
+ * each test reads in plain hours. The Copenhagen tests at the end cover what
+ * a real zone changes: local hours, local days, and the clock changes.
  */
+const TZ = "UTC";
 
 function makeParticipant(
   name: string,
@@ -36,6 +41,7 @@ function makeEvent(overrides: Partial<Event> = {}): Event {
     durationMinutes: 60,
     searchStart: "2026-06-22T00:00:00.000Z", // a Monday
     searchEnd: "2026-06-27T00:00:00.000Z", // the following Saturday
+    timeZone: TZ,
     ...overrides,
   };
 }
@@ -270,6 +276,7 @@ describe("findEarliestDaySpan", () => {
       3,
       START,
       END,
+      TZ,
     );
 
     expect(slot).toEqual({
@@ -285,7 +292,7 @@ describe("findEarliestDaySpan", () => {
       ["2026-06-22T00:00:00.000Z", "2026-06-25T00:00:00.000Z", "Ferie", "travel"],
     ]);
 
-    const { slot } = findEarliestDaySpan([alice], 3, START, END);
+    const { slot } = findEarliestDaySpan([alice], 3, START, END, TZ);
 
     expect(slot?.start).toBe("2026-06-25T00:00:00.000Z");
   });
@@ -308,7 +315,7 @@ describe("findEarliestDaySpan", () => {
       ],
     ]);
 
-    const { slot, conflicts } = findEarliestDaySpan([alice], 3, START, END);
+    const { slot, conflicts } = findEarliestDaySpan([alice], 3, START, END, TZ);
 
     expect(slot?.start).toBe("2026-06-22T00:00:00.000Z");
     expect(conflicts).toEqual([]);
@@ -322,7 +329,7 @@ describe("findEarliestDaySpan", () => {
       ["2026-06-23T09:00:00.000Z", "2026-06-23T17:00:00.000Z", "Arbejde", "work"],
     ]);
 
-    const { slot, conflicts } = findEarliestDaySpan([alice], 3, START, END);
+    const { slot, conflicts } = findEarliestDaySpan([alice], 3, START, END, TZ);
 
     expect(slot?.start).toBe("2026-06-22T00:00:00.000Z");
     expect(conflicts).toHaveLength(1);
@@ -337,7 +344,7 @@ describe("findEarliestDaySpan", () => {
       ["2026-06-30T09:00:00.000Z", "2026-06-30T17:00:00.000Z", "Arbejde", "work"],
     ]);
 
-    const { slot, conflicts } = findEarliestDaySpan([alice], 3, START, END);
+    const { slot, conflicts } = findEarliestDaySpan([alice], 3, START, END, TZ);
 
     expect(slot?.start).toBe("2026-06-22T00:00:00.000Z");
     expect(conflicts).toEqual([]);
@@ -358,7 +365,7 @@ describe("findEarliestDaySpan", () => {
       ],
     ]);
 
-    const { slot } = findEarliestDaySpan([alice, bob], 2, START, END);
+    const { slot } = findEarliestDaySpan([alice, bob], 2, START, END, TZ);
 
     expect(slot?.start).toBe("2026-06-26T00:00:00.000Z");
   });
@@ -368,7 +375,7 @@ describe("findEarliestDaySpan", () => {
       ["2026-06-22T00:00:00.000Z", "2026-06-23T00:00:00.000Z"],
     ]);
 
-    const { slot } = findEarliestDaySpan([alice], 2, START, END);
+    const { slot } = findEarliestDaySpan([alice], 2, START, END, TZ);
 
     expect(slot?.start).toBe("2026-06-23T00:00:00.000Z");
   });
@@ -379,6 +386,7 @@ describe("findEarliestDaySpan", () => {
       30,
       START,
       END, // only 14 days
+      TZ,
     );
 
     expect(result.slot).toBeNull();
@@ -387,9 +395,9 @@ describe("findEarliestDaySpan", () => {
 
   it("returns null for a non-positive or fractional day count", () => {
     const alice = makeParticipant("Alice", []);
-    expect(findEarliestDaySpan([alice], 0, START, END).slot).toBeNull();
-    expect(findEarliestDaySpan([alice], -2, START, END).slot).toBeNull();
-    expect(findEarliestDaySpan([alice], 1.5, START, END).slot).toBeNull();
+    expect(findEarliestDaySpan([alice], 0, START, END, TZ).slot).toBeNull();
+    expect(findEarliestDaySpan([alice], -2, START, END, TZ).slot).toBeNull();
+    expect(findEarliestDaySpan([alice], 1.5, START, END, TZ).slot).toBeNull();
   });
 
   it("aligns spans to whole days even when the search start is mid-day", () => {
@@ -398,6 +406,7 @@ describe("findEarliestDaySpan", () => {
       2,
       "2026-06-22T15:30:00.000Z",
       END,
+      TZ,
     );
 
     expect(slot?.start).toBe("2026-06-23T00:00:00.000Z");
@@ -440,7 +449,7 @@ describe("findBestDaySpan", () => {
       "2026-07-13T00:00:00.000Z",
     );
 
-    const { slot, conflicts } = findBestDaySpan([alice], 7, START, END);
+    const { slot, conflicts } = findBestDaySpan([alice], 7, START, END, TZ);
 
     expect(slot?.start).toBe("2026-07-03T00:00:00.000Z");
     expect(conflicts).toEqual([]);
@@ -451,7 +460,7 @@ describe("findBestDaySpan", () => {
     // still fits Friday to Sunday, leaving after work — the same story the
     // weekend-trip search tells about the same calendar.
     const alice = workerExcept("Alice", START, START); // never free
-    const { slot, conflicts } = findBestDaySpan([alice], 3, START, END);
+    const { slot, conflicts } = findBestDaySpan([alice], 3, START, END, TZ);
 
     expect(slot?.start).toBe("2026-06-26T00:00:00.000Z"); // a Friday
     expect(conflicts).toEqual([]);
@@ -469,7 +478,7 @@ describe("findBestDaySpan", () => {
     );
     const bob = workerExcept("Bob", SHORT_END, SHORT_END); // never free
 
-    const { slot, conflicts } = findBestDaySpan([alice, bob], 7, START, SHORT_END);
+    const { slot, conflicts } = findBestDaySpan([alice, bob], 7, START, SHORT_END, TZ);
 
     // Friday 26 June: Alice's last workday becomes the departure day, so only
     // Bob is conflicted from there on.
@@ -490,7 +499,7 @@ describe("findBestDaySpan", () => {
       ["2026-07-04T00:00:00.000Z", "2026-07-13T00:00:00.000Z", "Ferie", "travel"],
     ]);
 
-    const { slot, conflicts } = findBestDaySpan([alice, bob], 7, START, END);
+    const { slot, conflicts } = findBestDaySpan([alice, bob], 7, START, END, TZ);
 
     expect(slot).not.toBeNull();
     expect(slot?.start).not.toBe("2026-07-04T00:00:00.000Z");
@@ -503,6 +512,7 @@ describe("findBestDaySpan", () => {
       3,
       START,
       END,
+      TZ,
     );
 
     expect(slot?.start).toBe(START);
@@ -533,7 +543,7 @@ describe("findVacationSuggestions", () => {
   it("suggests the longest shorter stay that works for everyone", () => {
     // Alice works every weekday. 4 days can't happen without time off, but 3
     // days over a weekend can: leave after work Friday, home before Monday.
-    const out = findVacationSuggestions([fullTimeWorker("Alice")], 4, START, END);
+    const out = findVacationSuggestions([fullTimeWorker("Alice")], 4, START, END, TZ);
 
     expect(out).toHaveLength(1);
     expect(out[0].days).toBe(3);
@@ -546,7 +556,7 @@ describe("findVacationSuggestions", () => {
   it("falls back to the least-bad shorter option when nothing is clean", () => {
     // 7 days requested; 5 and 6 days also hit weekdays, so the best it can
     // offer is one day shorter with the remaining conflicts spelled out.
-    const out = findVacationSuggestions([fullTimeWorker("Alice")], 7, START, END);
+    const out = findVacationSuggestions([fullTimeWorker("Alice")], 7, START, END, TZ);
 
     expect(out).toHaveLength(1);
     expect(out[0].days).toBe(6);
@@ -554,7 +564,7 @@ describe("findVacationSuggestions", () => {
   });
 
   it("suggests nothing for very short requests with no room to trim", () => {
-    const out = findVacationSuggestions([fullTimeWorker("Alice")], 2, START, END);
+    const out = findVacationSuggestions([fullTimeWorker("Alice")], 2, START, END, TZ);
 
     expect(out).toEqual([]);
   });
@@ -573,6 +583,7 @@ describe("findWeeklySpan", () => {
       WEEKEND,
       START,
       END,
+      TZ,
     );
 
     expect(slot).toEqual({
@@ -587,7 +598,7 @@ describe("findWeeklySpan", () => {
       ["2026-06-26T09:00:00.000Z", "2026-06-26T17:00:00.000Z", "Arbejde", "work"],
     ]);
 
-    const { slot, conflicts } = findWeeklySpan([alice], WEEKEND, START, END);
+    const { slot, conflicts } = findWeeklySpan([alice], WEEKEND, START, END, TZ);
 
     expect(slot?.start).toBe("2026-06-26T17:00:00.000Z");
     expect(conflicts).toEqual([]);
@@ -598,7 +609,7 @@ describe("findWeeklySpan", () => {
       ["2026-06-26T17:00:00.000Z", "2026-06-26T20:00:00.000Z", "Overarbejde", "work"],
     ]);
 
-    const { slot, conflicts } = findWeeklySpan([alice], WEEKEND, START, END);
+    const { slot, conflicts } = findWeeklySpan([alice], WEEKEND, START, END, TZ);
 
     expect(slot?.start).toBe("2026-06-26T17:00:00.000Z");
     expect(conflicts).toHaveLength(1);
@@ -612,7 +623,7 @@ describe("findWeeklySpan", () => {
       ["2026-06-26T00:00:00.000Z", "2026-06-29T00:00:00.000Z", "Ferie", "travel"],
     ]);
 
-    const { slot } = findWeeklySpan([alice], WEEKEND, START, END);
+    const { slot } = findWeeklySpan([alice], WEEKEND, START, END, TZ);
 
     expect(slot?.start).toBe("2026-07-03T17:00:00.000Z");
   });
@@ -625,6 +636,7 @@ describe("findWeeklySpan", () => {
       WEEKEND,
       START,
       "2026-06-25T00:00:00.000Z",
+      TZ,
     );
 
     expect(result.slot).toBeNull();
@@ -637,11 +649,142 @@ describe("findWeeklySpan", () => {
       { anchorDow: 4, spanDays: 4, startHour: 17, endHour: 21 },
       START,
       END,
+      TZ,
     );
 
     expect(slot).toEqual({
       start: "2026-06-25T17:00:00.000Z",
       end: "2026-06-28T21:00:00.000Z",
     });
+  });
+});
+
+/**
+ * The same searches in a real zone. Copenhagen is UTC+2 in summer and UTC+1
+ * in winter; 2026's clock changes are Sunday 29 March (a 23-hour day) and
+ * Sunday 25 October (25 hours). Expected values are UTC instants, with the
+ * Copenhagen clock time in the comments.
+ */
+describe("searching in Copenhagen time", () => {
+  const CPH = "Europe/Copenhagen";
+
+  it("puts an 18:00 meeting at 18:00 Danish time, not 18:00 UTC", () => {
+    const { slot } = findEarliestSlot(
+      makeEvent({
+        timeZone: CPH,
+        searchStart: "2026-06-21T22:00:00.000Z", // Mon 22 Jun 00:00
+        participants: [makeParticipant("Alice", [])],
+        constraints: { earliestHour: 18, latestHour: 19 },
+      }),
+    );
+    expect(slot).toEqual({
+      start: "2026-06-22T16:00:00.000Z", // 18:00
+      end: "2026-06-22T17:00:00.000Z",
+    });
+  });
+
+  it("is blocked by what is busy at 18:00 locally", () => {
+    const { slot } = findEarliestSlot(
+      makeEvent({
+        timeZone: CPH,
+        searchStart: "2026-06-21T22:00:00.000Z",
+        participants: [
+          // Busy 18:00-19:00 Monday in Copenhagen, which is 16:00 UTC.
+          makeParticipant("Alice", [["2026-06-22T16:00:00.000Z", "2026-06-22T17:00:00.000Z"]]),
+        ],
+        constraints: { earliestHour: 18, latestHour: 19 },
+      }),
+    );
+    expect(slot?.start).toBe("2026-06-23T16:00:00.000Z"); // Tuesday 18:00
+  });
+
+  it("uses the local weekday for allowed days", () => {
+    // Saturday 00:00-01:00 in Copenhagen is still Friday in UTC.
+    const { slot } = findEarliestSlot(
+      makeEvent({
+        timeZone: CPH,
+        searchStart: "2026-06-21T22:00:00.000Z",
+        participants: [makeParticipant("Alice", [])],
+        constraints: { earliestHour: 0, latestHour: 1, allowedDays: [6] },
+      }),
+    );
+    expect(slot?.start).toBe("2026-06-26T22:00:00.000Z"); // Sat 27 Jun 00:00
+  });
+
+  it("keeps day spans on local midnights across the spring clock change", () => {
+    const { slot } = findEarliestDaySpan(
+      [makeParticipant("Alice", [])],
+      3,
+      "2026-03-27T23:00:00.000Z", // Sat 28 Mar 00:00 (CET)
+      "2026-04-10T22:00:00.000Z",
+      CPH,
+    );
+    expect(slot).toEqual({
+      start: "2026-03-27T23:00:00.000Z", // Sat 28 Mar 00:00 CET
+      end: "2026-03-30T22:00:00.000Z", // Tue 31 Mar 00:00 CEST: 71 hours later
+    });
+  });
+
+  it("sees an all-day absence on the 25-hour autumn Sunday as that one day", () => {
+    const alice = makeParticipant("Alice", [
+      // Away all of Sunday 25 October, local midnight to local midnight.
+      ["2026-10-24T22:00:00.000Z", "2026-10-25T23:00:00.000Z"],
+    ]);
+    const { slot } = findEarliestDaySpan(
+      [alice],
+      1,
+      "2026-10-23T22:00:00.000Z", // Sat 24 Oct 00:00
+      "2026-11-01T23:00:00.000Z",
+      CPH,
+    );
+    // Saturday is free; with a 3-day span Sunday blocks and Monday is next.
+    expect(slot?.start).toBe("2026-10-23T22:00:00.000Z");
+    const three = findEarliestDaySpan(
+      [alice],
+      3,
+      "2026-10-23T22:00:00.000Z",
+      "2026-11-01T23:00:00.000Z",
+      CPH,
+    );
+    expect(three.slot?.start).toBe("2026-10-25T23:00:00.000Z"); // Mon 26 Oct 00:00 CET
+  });
+
+  it("finds a Friday-after-work weekend in local time", () => {
+    const { slot } = findWeeklySpan(
+      [makeParticipant("Alice", [])],
+      { anchorDow: 5, spanDays: 3, startHour: 17, endHour: 21 },
+      "2026-06-21T22:00:00.000Z",
+      "2026-07-21T22:00:00.000Z",
+      CPH,
+    );
+    expect(slot).toEqual({
+      start: "2026-06-26T15:00:00.000Z", // Fri 17:00
+      end: "2026-06-28T19:00:00.000Z", // Sun 21:00
+    });
+  });
+
+  it("applies the leave-after-work rule at 17:00 local", () => {
+    // Work 09:00-17:00 Copenhagen time on Friday 26 June: over by the
+    // evening departure, so a Friday-to-Sunday vacation has no conflicts.
+    const alice: Participant = {
+      profileId: "alice",
+      name: "Alice",
+      busy: [
+        {
+          start: "2026-06-26T07:00:00.000Z",
+          end: "2026-06-26T15:00:00.000Z",
+          category: "work",
+        },
+      ],
+    };
+    const { slot, conflicts } = findBestDaySpan(
+      [alice],
+      3,
+      "2026-06-25T22:00:00.000Z", // Fri 26 Jun 00:00
+      "2026-06-28T22:00:00.000Z", // exactly three days
+      CPH,
+    );
+    expect(slot?.start).toBe("2026-06-25T22:00:00.000Z");
+    expect(conflicts).toEqual([]);
   });
 });

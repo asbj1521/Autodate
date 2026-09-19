@@ -12,6 +12,14 @@
  * and their calendar is generated from it. Busy people are genuinely busy, so a
  * shared free slot is hard to find, on purpose. Nothing is hand-picked or
  * guaranteed free; the overlap (or lack of it) falls straight out of the data.
+ *
+ * Time: the generator reasons in Copenhagen calendar dates and clock times
+ * ("Monday, 09:00 to 17:00"). Internally those are kept as "wall-clock ms":
+ * Date.UTC(year, month, day, hour), whose UTC fields *are* the local date and
+ * time, so day arithmetic stays simple. They only become real instants in
+ * `iso()`, where each one is read as Copenhagen time. So work runs 09:00 to
+ * 17:00 Danish time in summer and winter alike, as it would in a real
+ * calendar.
  */
 
 import type {
@@ -21,6 +29,10 @@ import type {
   FriendGroup,
   Participant,
 } from "@/types";
+import { APP_TIME_ZONE, localDate, wallTime } from "@/lib/zone";
+
+/** The zone the generated people live in. */
+const TZ = APP_TIME_ZONE;
 
 const MS_PER_HOUR = 3_600_000;
 const MS_PER_DAY = 86_400_000;
@@ -33,7 +45,9 @@ export const DAY_END = 24;
 // only appear within a couple of weeks of this; structured commitments (work,
 // school, recurring routines, holidays) are on the calendar regardless. Derived
 // from the clock so it tracks "now" the same way the UI's calendar does.
-const NOW = Math.floor(Date.now() / MS_PER_DAY) * MS_PER_DAY;
+// Wall-clock ms (see the top of the file): today's date in Copenhagen.
+const TODAY = localDate(Date.now(), TZ);
+const NOW = Date.UTC(TODAY.year, TODAY.month, TODAY.day);
 
 // Calendars are generated for a rolling window anchored to the clock: from the
 // 1st of the current month through twelve whole months. Near-term weeks are
@@ -47,8 +61,8 @@ const PLAN_DAYS = Math.round((PLAN_END - PLAN_START) / MS_PER_DAY);
 
 // The search window covers the generated range. Weekends are allowed — this is
 // mainly for events in the user's private life.
-const SEARCH_START = new Date(PLAN_START).toISOString();
-const SEARCH_END = new Date(PLAN_END).toISOString();
+const SEARCH_START = iso(PLAN_START);
+const SEARCH_END = iso(PLAN_END);
 
 /** The window the scheduler searches and has generated calendar data for. */
 export const SEARCH_WINDOW = { start: SEARCH_START, end: SEARCH_END };
@@ -215,7 +229,7 @@ const SATURDAYS = Array.from({ length: PLAN_DAYS }, (_, i) => i).filter(
  * when the *whole country's* calendar opens up, not on random weeks.
  * ------------------------------------------------------------------------- */
 
-/** A half-open [start, end) range of whole days, UTC ms. */
+/** A half-open [start, end) range of whole days, in wall-clock ms. */
 interface BreakRange {
   start: number;
   end: number;
@@ -287,8 +301,17 @@ function makeRng(seed: number): () => number {
   };
 }
 
-function iso(ms: number): string {
-  return new Date(ms).toISOString();
+/**
+ * A wall-clock time (see the top of the file) as the real instant it happens
+ * at in Copenhagen, as an ISO string. The one place generated times cross from
+ * "local clock time" into instants.
+ */
+function iso(wallMs: number): string {
+  const d = new Date(wallMs);
+  const hours = d.getUTCHours() + d.getUTCMinutes() / 60;
+  return new Date(
+    wallTime(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), hours, TZ),
+  ).toISOString();
 }
 
 /**
@@ -609,7 +632,7 @@ export function buildEventForGroup(
   opts?: {
     durationMinutes?: number;
     startHour?: number;
-    /** UTC days of week the event may land on (0 = Sun … 6 = Sat). */
+    /** Local days of week the event may land on (0 = Sun … 6 = Sat). */
     allowedDays?: number[];
   },
 ): Event {
@@ -623,6 +646,7 @@ export function buildEventForGroup(
     durationMinutes,
     searchStart: SEARCH_START,
     searchEnd: SEARCH_END,
+    timeZone: TZ,
     constraints: {
       // The picked start time is a *fixed* meeting time: the allowed window is
       // exactly one meeting long, so the engine only ever returns days the whole

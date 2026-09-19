@@ -39,26 +39,33 @@ import { formatDaySpan, formatSlot, formatTime, formatTripSpan } from "@/lib/for
 import type { SchedulingResult } from "@/types";
 import { avatarColor } from "@/lib/avatar";
 import { ACCENT_RGB, AMBER_RGB } from "@/lib/colors";
-import { DAY_MS, dayOf, monthStartMs } from "@/lib/day";
+import { dayOf, monthStartMs } from "@/lib/day";
 import { ALL_DOWS } from "@/lib/weekdays";
 import { cn } from "@/lib/utils";
+import { addDays, APP_TIME_ZONE, localDate, startOfMonth } from "@/lib/zone";
 import CalendarPanel from "@/components/CalendarPanel";
 import DaySlider from "@/components/DaySlider";
 import Dropdown from "@/components/Dropdown";
 import GroupSwitcher from "@/components/GroupSwitcher";
 import TopNav from "@/components/TopNav";
 
-/** Today as a UTC-midnight ISO (computed once), so the calendar can circle it. */
-const TODAY_DAY = dayOf(new Date().toISOString());
+/**
+ * The zone every search and every day on this page is local to. One constant
+ * for now; once groups exist for real, each group carries its own.
+ */
+const TZ = APP_TIME_ZONE;
 
-/** First-of-month (UTC ms) for the month containing today — the default view. */
-const DEFAULT_MONTH = monthStartMs(Date.parse(TODAY_DAY));
+/** Today as a local-midnight ISO (computed once), so the calendar can circle it. */
+const TODAY_DAY = dayOf(new Date().toISOString(), TZ);
+
+/** First-of-month (ms) for the month containing today — the default view. */
+const DEFAULT_MONTH = monthStartMs(Date.parse(TODAY_DAY), TZ);
 /** Navigable month range: from this month up to the last month with data. */
 const MIN_MONTH = Math.max(
   DEFAULT_MONTH,
-  monthStartMs(Date.parse(SEARCH_WINDOW.start)),
+  monthStartMs(Date.parse(SEARCH_WINDOW.start), TZ),
 );
-const MAX_MONTH = monthStartMs(Date.parse(SEARCH_WINDOW.end) - 1);
+const MAX_MONTH = monthStartMs(Date.parse(SEARCH_WINDOW.end) - 1, TZ);
 
 /**
  * Horizontal slide + motion-blur used when the calendar pages to a new date
@@ -115,7 +122,7 @@ interface EventTypeDef {
   startHour?: number;
   /** Default length for vacations. */
   defaultDays?: number;
-  /** Default searched/covered days of week (UTC values); omitted = all. */
+  /** Default searched/covered days of week (local values); omitted = all. */
   defaultDows?: number[];
 }
 
@@ -237,12 +244,13 @@ export default function FindDate() {
   // The month calendar, tinted by availability for the current event shape.
   const monthGrid = useMemo(() => {
     if (!activeGroup) return null;
-    const vm = new Date(viewMonth);
+    const vm = localDate(viewMonth, TZ);
     return buildMonthGrid(
       activeGroup.participants,
-      vm.getUTCFullYear(),
-      vm.getUTCMonth(),
+      vm.year,
+      vm.month,
       {
+        timeZone: TZ,
         startHour,
         durationMinutes,
         todayMs: Date.parse(TODAY_DAY),
@@ -291,6 +299,7 @@ export default function FindDate() {
         days,
         searchStart,
         SEARCH_WINDOW.end,
+        TZ,
       );
     }
     if (eventType.kind === "trip" && tripShape) {
@@ -299,6 +308,7 @@ export default function FindDate() {
         tripShape,
         searchStart,
         SEARCH_WINDOW.end,
+        TZ,
       );
     }
     return null;
@@ -320,6 +330,7 @@ export default function FindDate() {
       days,
       searchFrom ?? SEARCH_BASE,
       SEARCH_WINDOW.end,
+      TZ,
     );
   }, [eventType, activeGroup, multiResult, days, searchFrom]);
 
@@ -327,8 +338,8 @@ export default function FindDate() {
   // found drives the calendar highlight and the banner.
   const activeSlot = (isMultiDay ? multiResult?.slot : result?.slot) ?? null;
 
-  // The day (UTC midnight ISO) containing the best slot, for highlighting.
-  const bestDay = activeSlot ? dayOf(activeSlot.start) : null;
+  // The day (local-midnight ISO) containing the best slot, for highlighting.
+  const bestDay = activeSlot ? dayOf(activeSlot.start, TZ) : null;
 
   // "11:00"-style label for the best slot's start time; meaningless for
   // whole-day spans, so omitted there.
@@ -347,8 +358,8 @@ export default function FindDate() {
   /** Adopt a suggested workaround: shorter stay, anchored on its dates. */
   function applySuggestion(s: VacationSuggestion) {
     setDays(s.days);
-    resetSearch(dayOf(s.slot.start));
-    revealDay(dayOf(s.slot.start));
+    resetSearch(dayOf(s.slot.start, TZ));
+    revealDay(dayOf(s.slot.start, TZ));
   }
 
   function handleSelectGroup(id: string) {
@@ -405,7 +416,7 @@ export default function FindDate() {
    * forward in time sweeps the new month in from the right, back reverses it.
    */
   function revealDay(dayIso: string) {
-    const month = monthStartMs(Date.parse(dayIso));
+    const month = monthStartMs(Date.parse(dayIso), TZ);
     if (month === viewMonth) return;
     setSlideDir(month > viewMonth ? 1 : -1);
     setViewMonth(month);
@@ -420,7 +431,7 @@ export default function FindDate() {
    */
   useEffect(() => {
     if (revealRequest === 0 || !activeSlot) return;
-    revealDay(dayOf(activeSlot.start));
+    revealDay(dayOf(activeSlot.start, TZ));
     // Deliberately keyed on the request alone: changing a setting recomputes
     // activeSlot too, and that must not move the calendar on its own.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -428,8 +439,7 @@ export default function FindDate() {
 
   /** Step the calendar a month back (-1) or forward (+1), within the data range. */
   function pageMonth(delta: number) {
-    const d = new Date(viewMonth);
-    const month = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + delta, 1);
+    const month = startOfMonth(viewMonth, TZ, delta);
     if (month < MIN_MONTH || month > MAX_MONTH) return;
     setSlideDir(delta);
     setViewMonth(month);
@@ -444,7 +454,8 @@ export default function FindDate() {
   /** Advance the search past the current slot's day to surface the next one. */
   function handleFindNew() {
     if (!activeSlot) return;
-    resetSearch(new Date(Date.parse(dayOf(activeSlot.start)) + DAY_MS).toISOString());
+    const nextDay = addDays(Date.parse(activeSlot.start), 1, TZ);
+    resetSearch(new Date(nextDay).toISOString());
     setRevealRequest((n) => n + 1);
   }
 
@@ -835,6 +846,7 @@ export default function FindDate() {
                         bestSpanDays={bestSpanDays}
                         bestTimeLabel={bestTimeLabel}
                         todayDay={TODAY_DAY}
+                        timeZone={TZ}
                       />
                     )}
                   </motion.div>

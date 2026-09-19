@@ -30,6 +30,8 @@ function makeParticipant(
 
 function makeOptions(overrides: Partial<MonthGridOptions> = {}): MonthGridOptions {
   return {
+    // Local time equals UTC here, so the fixtures read in plain hours.
+    timeZone: "UTC",
     startHour: 18,
     durationMinutes: 120,
     todayMs: LONG_AGO,
@@ -263,5 +265,29 @@ describe("buildMonthGrid in weekend-trip mode", () => {
     );
 
     expect(cellFor(grid.weeks, 8).excluded).toBe(true);
+  });
+});
+
+describe("buildMonthGrid in Copenhagen time", () => {
+  const CPH = "Europe/Copenhagen";
+
+  it("starts every day at local midnight, across the spring clock change", () => {
+    const grid = buildMonthGrid([], YEAR, 2, makeOptions({ timeZone: CPH })); // March
+    expect(cellFor(grid.weeks, 28).date).toBe("2026-03-27T23:00:00.000Z"); // CET
+    expect(cellFor(grid.weeks, 29).date).toBe("2026-03-28T23:00:00.000Z"); // CET
+    expect(cellFor(grid.weeks, 30).date).toBe("2026-03-29T22:00:00.000Z"); // CEST
+  });
+
+  it("counts who is free at 18:00 Danish time", () => {
+    const people = [
+      // Busy 18:00-20:00 in Copenhagen on 3 June (16:00-18:00 UTC).
+      makeParticipant("Alice", [["2026-06-03T16:00:00.000Z", "2026-06-03T18:00:00.000Z"]]),
+      makeParticipant("Bob", []),
+    ];
+    const grid = buildMonthGrid(people, YEAR, JUNE, makeOptions({ timeZone: CPH }));
+    expect(cellFor(grid.weeks, 3).freeCount).toBe(1);
+    // Read in UTC the same block is 16-18, over before an 18:00 UTC meeting.
+    const utc = buildMonthGrid(people, YEAR, JUNE, makeOptions());
+    expect(cellFor(utc.weeks, 3).freeCount).toBe(2);
   });
 });

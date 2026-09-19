@@ -7,7 +7,8 @@
  * time, and the UI tints each day by that count so the best days jump out. Days
  * in the past keep their tint but get dimmed in the UI.
  *
- * Like the engine, this is a pure function over the data model and works in UTC.
+ * Like the engine, this is a pure function over the data model. Days, hours
+ * and weekdays are local to the zone it is given (src/lib/zone.ts).
  */
 
 import {
@@ -16,9 +17,10 @@ import {
   type WeeklySpanShape,
 } from "@/lib/availability";
 import type { Participant } from "@/types";
+import { addDays, atHour, localDate, startOfDay, wallTime } from "@/lib/zone";
 
 export interface DayCell {
-  /** ISO 8601 UTC midnight for this day. */
+  /** The instant of local midnight at the start of this day, ISO 8601. */
   date: string;
   /** Day number 1–31, for the cell label. */
   dayOfMonth: number;
@@ -52,10 +54,7 @@ export interface MonthGrid {
   total: number;
 }
 
-const MS_PER_HOUR = 3_600_000;
-const MS_PER_DAY = 86_400_000;
-
-// Danish weekday abbreviations indexed by Date.getUTCDay() (0 = Sun … 6 = Sat).
+// Danish weekday abbreviations indexed by day of week (0 = Sun … 6 = Sat).
 const DOW_LABELS = ["søn.", "man.", "tirs.", "ons.", "tors.", "fre.", "lør."];
 // Monday-first column order: man, tirs, ons, tors, fre, lør, søn.
 const MON_FIRST_LABELS = [1, 2, 3, 4, 5, 6, 0].map((i) => DOW_LABELS[i]);
@@ -79,8 +78,9 @@ function freeForMeetingOnDay(
   dayMidnight: number,
   startHour: number,
   durationMs: number,
+  timeZone: string,
 ): number {
-  const start = dayMidnight + startHour * MS_PER_HOUR;
+  const start = atHour(dayMidnight, startHour, timeZone);
   const end = start + durationMs;
   let count = 0;
   for (const p of participants) {
@@ -91,14 +91,16 @@ function freeForMeetingOnDay(
 
 /** How availability is computed for each day cell. */
 export interface MonthGridOptions {
-  /** Meeting start hour for single-day events, 0–23. */
+  /** IANA zone the days, hours and weekdays are local to. */
+  timeZone: string;
+  /** Local meeting start hour for single-day events, 0–23. */
   startHour: number;
   /** Meeting length in minutes (may cross midnight). */
   durationMinutes: number;
   /** Any instant "now", used to flag past days. */
   todayMs: number;
   /**
-   * Which UTC days of week are searched for single-day events (0 = Sun … 6 =
+   * Which local days of week are searched for single-day events (0 = Sun … 6 =
    * Sat). Days outside the set render as excluded. Omitted = all seven.
    */
   allowedDays?: number[];
@@ -133,27 +135,29 @@ export function buildMonthGrid(
   month: number,
   opts: MonthGridOptions,
 ): MonthGrid {
-  const { startHour, durationMinutes, todayMs, allowedDays, multiDay, weeklySpan } =
+  const { timeZone, startHour, durationMinutes, todayMs, allowedDays, multiDay, weeklySpan } =
     opts;
   const durationMs = durationMinutes * 60_000;
-  const firstOfMonth = Date.UTC(year, month, 1);
+  const firstOfMonth = wallTime(year, month, 1, 0, timeZone);
+  const firstDow = localDate(firstOfMonth, timeZone).dow; // 0 = Sun … 6 = Sat
   const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-  const todayMidnight = Math.floor(todayMs / MS_PER_DAY) * MS_PER_DAY;
+  const todayMidnight = startOfDay(todayMs, timeZone);
 
   // Monday-first leading offset: how many days of the previous month to show.
-  const firstDow = new Date(firstOfMonth).getUTCDay(); // 0 = Sun … 6 = Sat
   const leading = (firstDow + 6) % 7;
-  const gridStart = firstOfMonth - leading * MS_PER_DAY;
   const numWeeks = Math.ceil((leading + daysInMonth) / 7);
 
   const weeks: DayCell[][] = [];
   for (let week = 0; week < numWeeks; week++) {
     const row: DayCell[] = [];
     for (let col = 0; col < 7; col++) {
-      const dayMidnight = gridStart + (week * 7 + col) * MS_PER_DAY;
-      const d = new Date(dayMidnight);
-      const dow = d.getUTCDay();
-      const inMonth = d.getUTCMonth() === month && d.getUTCFullYear() === year;
+      // Built from the calendar date, not by adding 24 h per cell, so a grid
+      // crossing a clock change still has every cell on a local midnight.
+      const dayMidnight = wallTime(year, month, 1 - leading + week * 7 + col, 0, timeZone);
+      const nextMidnight = addDays(dayMidnight, 1, timeZone);
+      const d = localDate(dayMidnight, timeZone);
+      const dow = d.dow;
+      const inMonth = d.month === month && d.year === year;
 
       let freeCount = 0;
       let conditionalCount = 0;
@@ -169,13 +173,11 @@ export function buildMonthGrid(
             excluded = true;
           } else {
             const sliceStart =
-              dayMidnight +
-              (offset === 0 ? weeklySpan.startHour * MS_PER_HOUR : 0);
+              offset === 0 ? atHour(dayMidnight, weeklySpan.startHour, timeZone) : dayMidnight;
             const sliceEnd =
-              dayMidnight +
-              (offset === weeklySpan.spanDays - 1
-                ? weeklySpan.endHour * MS_PER_HOUR
-                : MS_PER_DAY);
+              offset === weeklySpan.spanDays - 1
+                ? atHour(dayMidnight, weeklySpan.endHour, timeZone)
+                : nextMidnight;
             if (sliceEnd <= weeklySpan.windowEndMs) {
               const a = spanAvailability(participants, sliceStart, sliceEnd);
               freeCount = a.free;
@@ -185,12 +187,8 @@ export function buildMonthGrid(
         } else if (multiDay) {
           // Vacation mode: per-day availability, same data story as the
           // other modes.
-          if (dayMidnight + MS_PER_DAY <= multiDay.windowEndMs) {
-            const a = spanAvailability(
-              participants,
-              dayMidnight,
-              dayMidnight + MS_PER_DAY,
-            );
+          if (nextMidnight <= multiDay.windowEndMs) {
+            const a = spanAvailability(participants, dayMidnight, nextMidnight);
             freeCount = a.free;
             conditionalCount = a.conditional;
           }
@@ -202,13 +200,14 @@ export function buildMonthGrid(
             dayMidnight,
             startHour,
             durationMs,
+            timeZone,
           );
         }
       }
 
       row.push({
-        date: d.toISOString(),
-        dayOfMonth: d.getUTCDate(),
+        date: new Date(dayMidnight).toISOString(),
+        dayOfMonth: d.day,
         inMonth,
         isPast: dayMidnight < todayMidnight,
         freeCount,
@@ -222,7 +221,7 @@ export function buildMonthGrid(
 
   const monthName = new Date(firstOfMonth).toLocaleString("da-DK", {
     month: "long",
-    timeZone: "UTC",
+    timeZone,
   });
 
   return {

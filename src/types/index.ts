@@ -6,9 +6,10 @@
  * eventually hand us, so the mock data layer and the real one share one shape.
  *
  * Time convention: all instants are stored as ISO 8601 strings in UTC
- * (e.g. "2026-06-20T14:00:00.000Z"). We only convert to local time at the UI
- * edge. Keeping the core in UTC avoids an entire category of timezone bugs in
- * the availability engine.
+ * (e.g. "2026-06-20T14:00:00.000Z"): a busy block is a moment in time no
+ * matter where anyone is. What *is* local is how people describe a meeting,
+ * "18:00 on a Friday", so those settings are read in the event's time zone
+ * (see src/lib/zone.ts) and turned into instants before any comparison.
  */
 
 /** Which kind of account a calendar came from. */
@@ -87,6 +88,11 @@ export interface Event {
   /** The window to search within, as ISO 8601 UTC instants. */
   searchStart: string;
   searchEnd: string;
+  /**
+   * IANA zone the constraints' hours and weekdays are read in, e.g.
+   * "Europe/Copenhagen". Required, so no search silently falls back to UTC.
+   */
+  timeZone: string;
   /** Optional constraints on what counts as an acceptable slot. */
   constraints?: SchedulingConstraints;
 }
@@ -97,12 +103,12 @@ export interface Event {
  */
 export interface SchedulingConstraints {
   /**
-   * Earliest hour of day a meeting may start, 0-23 local-ish (applied in UTC
-   * for now; timezone-aware day windows come later). Defaults to 0.
+   * Earliest local hour of day a meeting may start, 0-23 (fractions allowed).
+   * Defaults to 0.
    */
   earliestHour?: number;
   /**
-   * Latest hour of day a meeting may *end*, 1-24 — or beyond 24 to let the
+   * Latest local hour of day a meeting may *end*, 1-24 — or beyond 24 to let the
    * window spill past midnight (e.g. 26 = 02:00 the next day, for night events).
    * Defaults to 24.
    */
@@ -110,7 +116,7 @@ export interface SchedulingConstraints {
   /** If true, Saturdays and Sundays are excluded. Defaults to false. */
   excludeWeekends?: boolean;
   /**
-   * Which days of the week may host the event, as UTC day-of-week values
+   * Which days of the week may host the event, as local day-of-week values
    * (0 = Sunday … 6 = Saturday). A window is kept if it *starts* on an allowed
    * day, so a Friday night out that ends 02:00 Saturday counts as Friday.
    * Omitted = all seven days.

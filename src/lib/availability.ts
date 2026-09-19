@@ -23,6 +23,12 @@
  * On top sits the departure-day rule: a soft block on the span's first day
  * ending by 17:00 is no obstacle — you leave in the evening, exactly like a
  * weekend trip starting Friday after work.
+ *
+ * Time zones: blocks and results are instants, but hours, weekdays and whole
+ * days are local to the zone each search is given ("18:00" means 18:00 in
+ * Copenhagen). Days are stepped with src/lib/zone.ts rather than by adding
+ * 24 hours, so the two days a year that are 23 or 25 hours long come out
+ * right.
  */
 
 import type {
@@ -33,10 +39,10 @@ import type {
   SchedulingResult,
   TimeSlot,
 } from "@/types";
+import { addDays, atHour, dayOfWeek, startOfDay } from "@/lib/zone";
 
 const MS_PER_MINUTE = 60_000;
 const MS_PER_HOUR = 3_600_000;
-const MS_PER_DAY = 86_400_000;
 
 /** How many alternative slots (beyond the primary) we surface to the UI. */
 const MAX_ALTERNATIVES = 3;
@@ -57,7 +63,6 @@ const MIN_HARD_BLOCK_MS = 20 * MS_PER_HOUR;
 
 /** The departure-day rule's cutoff: work ending by 17:00 = leave after work. */
 const DEPARTURE_HOUR = 17;
-const DEPARTURE_MS = DEPARTURE_HOUR * MS_PER_HOUR;
 
 /* ----------------------------------------------------------------------------
  * Shared primitives
@@ -71,9 +76,11 @@ interface Interval {
 
 const iso = (ms: number): string => new Date(ms).toISOString();
 
-/** The UTC midnight on or before / on or after the given instant. */
-const utcMidnight = (ms: number): number => Math.floor(ms / MS_PER_DAY) * MS_PER_DAY;
-const utcMidnightCeil = (ms: number): number => Math.ceil(ms / MS_PER_DAY) * MS_PER_DAY;
+/** Local midnight on or after the given instant. */
+function startOfDayCeil(ms: number, timeZone: string): number {
+  const day = startOfDay(ms, timeZone);
+  return day < ms ? addDays(day, 1, timeZone) : day;
+}
 
 /** Parse a search range; null if either end is malformed or the range is empty. */
 function parseRange(startIso: string, endIso: string): Interval | null {
@@ -240,7 +247,7 @@ export function findEarliestSlot(event: Event): SchedulingResult {
   if (!range || durationMs <= 0) return { slot: null, alternatives: [] };
 
   const free = subtractIntervals(
-    buildAllowedWindows(range, event.constraints),
+    buildAllowedWindows(range, event.timeZone, event.constraints),
     collectBusy(event.participants, range),
   );
 
@@ -261,11 +268,13 @@ export function findEarliestSlot(event: Event): SchedulingResult {
 
 /**
  * The intervals a meeting is *allowed* to land in, from the daily-hour /
- * weekend / weekday constraints. `latestHour` may exceed 24 so a night event
- * can spill past midnight; a window belongs to the day it *starts* on.
+ * weekend / weekday constraints, read as local time in `timeZone`.
+ * `latestHour` may exceed 24 so a night event can spill past midnight; a
+ * window belongs to the day it *starts* on.
  */
 function buildAllowedWindows(
   range: Interval,
+  timeZone: string,
   constraints?: SchedulingConstraints,
 ): Interval[] {
   const earliestHour = constraints?.earliestHour ?? 0;
@@ -283,13 +292,17 @@ function buildAllowedWindows(
 
   // Walk day by day; each allowed day contributes one clamped window.
   const windows: Interval[] = [];
-  for (let day = utcMidnight(range.start); day < range.end; day += MS_PER_DAY) {
-    const dow = new Date(day).getUTCDay(); // 0 = Sun … 6 = Sat
+  for (
+    let day = startOfDay(range.start, timeZone);
+    day < range.end;
+    day = addDays(day, 1, timeZone)
+  ) {
+    const dow = dayOfWeek(day, timeZone); // 0 = Sun … 6 = Sat
     if (excludeWeekends && (dow === 0 || dow === 6)) continue;
     if (allowedDays && !allowedDays.has(dow)) continue;
 
-    const start = Math.max(range.start, day + earliestHour * MS_PER_HOUR);
-    const end = Math.min(range.end, day + latestHour * MS_PER_HOUR);
+    const start = Math.max(range.start, atHour(day, earliestHour, timeZone));
+    const end = Math.min(range.end, atHour(day, latestHour, timeZone));
     if (end > start) windows.push({ start, end });
   }
   return windows;
@@ -372,12 +385,31 @@ interface DayGrid {
   soft: { prefix: Int32Array; onDay: Uint8Array; lateOnDay: Uint8Array }[];
 }
 
+/** The last index i with bounds[i] <= ms (bounds ascending, ms >= bounds[0]). */
+function dayIndexFloor(bounds: number[], ms: number): number {
+  let lo = 0;
+  let hi = bounds.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (bounds[mid] <= ms) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
+}
+
+/**
+ * `bounds` are the local midnights of the searched days plus the one after the
+ * last, so day i is [bounds[i], bounds[i + 1]) whatever its length.
+ * `departures[i]` is 17:00 on day i.
+ */
 function buildDayGrid(
   participants: Participant[],
-  firstDay: number,
-  numDays: number,
+  bounds: number[],
+  departures: number[],
 ): DayGrid {
-  const lastDay = firstDay + numDays * MS_PER_DAY;
+  const numDays = bounds.length - 1;
+  const first = bounds[0];
+  const last = bounds[numDays];
   const hard = new Uint8Array(numDays);
   const soft = participants.map(() => ({
     onDay: new Uint8Array(numDays),
@@ -387,9 +419,11 @@ function buildDayGrid(
   participants.forEach((p, pi) => {
     for (const block of p.busy) {
       const iv = parseBlock(block);
-      if (!iv || iv.end <= firstDay || iv.start >= lastDay) continue;
-      const from = Math.max(0, Math.floor((iv.start - firstDay) / MS_PER_DAY));
-      const to = Math.min(numDays, Math.ceil((iv.end - firstDay) / MS_PER_DAY));
+      if (!iv || iv.end <= first || iv.start >= last) continue;
+      // Days touched: from the day containing the start through the day
+      // containing the last moment before the (exclusive) end.
+      const from = iv.start <= first ? 0 : dayIndexFloor(bounds, iv.start);
+      const to = iv.end >= last ? numDays : dayIndexFloor(bounds, iv.end - 1) + 1;
 
       if (isHardBlock(block)) {
         for (let i = from; i < to; i++) hard[i] = 1;
@@ -397,9 +431,7 @@ function buildDayGrid(
         for (let i = from; i < to; i++) {
           soft[pi].onDay[i] = 1;
           // Runs past 17:00 on this day -> the departure-day rule can't save it.
-          if (iv.end > firstDay + i * MS_PER_DAY + DEPARTURE_MS) {
-            soft[pi].lateOnDay[i] = 1;
-          }
+          if (iv.end > departures[i]) soft[pi].lateOnDay[i] = 1;
         }
       }
     }
@@ -432,18 +464,28 @@ function searchDaySpans(
   days: number,
   searchStart: string,
   searchEnd: string,
+  timeZone: string,
   policy: "earliest" | "best",
 ): MultiDayResult {
   const range = parseRange(searchStart, searchEnd);
   if (!range || !Number.isInteger(days) || days <= 0) return noSpan();
 
-  // Day-align: first candidate starts at the midnight on/after the range
-  // start; every span must end by the midnight on/before the range end.
-  const firstDay = utcMidnightCeil(range.start);
-  const numDays = Math.round((utcMidnight(range.end) - firstDay) / MS_PER_DAY);
+  // Day-align: the first candidate starts at the local midnight on/after the
+  // range start; every span must end by the midnight on/before the range end.
+  const lastMidnight = startOfDay(range.end, timeZone);
+  const bounds: number[] = [];
+  for (
+    let day = startOfDayCeil(range.start, timeZone);
+    day <= lastMidnight;
+    day = addDays(day, 1, timeZone)
+  ) {
+    bounds.push(day);
+  }
+  const numDays = bounds.length - 1;
   if (numDays < days) return noSpan();
 
-  const grid = buildDayGrid(participants, firstDay, numDays);
+  const departures = bounds.map((day) => atHour(day, DEPARTURE_HOUR, timeZone));
+  const grid = buildDayGrid(participants, bounds, departures);
   const scored = policy === "best";
 
   let bestStart = -1;
@@ -480,8 +522,8 @@ function searchDaySpans(
 
   if (bestStart < 0) return noSpan();
 
-  const slotStart = firstDay + bestStart * MS_PER_DAY;
-  const slotEnd = slotStart + days * MS_PER_DAY;
+  const slotStart = bounds[bestStart];
+  const slotEnd = bounds[bestStart + days];
   return {
     slot: { start: iso(slotStart), end: iso(slotEnd) },
     conflicts: collectSoftConflicts(
@@ -489,13 +531,13 @@ function searchDaySpans(
       slotStart,
       slotEnd,
       // Don't report the departure-day workday the scoring already forgave.
-      scored ? slotStart + DEPARTURE_MS : undefined,
+      scored ? departures[bestStart] : undefined,
     ),
   };
 }
 
 /**
- * Find the earliest run of `days` consecutive days no participant
+ * Find the earliest run of `days` consecutive local days no participant
  * hard-blocks. Work/school inside the span is reported, not avoided.
  */
 export function findEarliestDaySpan(
@@ -503,24 +545,26 @@ export function findEarliestDaySpan(
   days: number,
   searchStart: string,
   searchEnd: string,
+  timeZone: string,
 ): MultiDayResult {
-  return searchDaySpans(participants, days, searchStart, searchEnd, "earliest");
+  return searchDaySpans(participants, days, searchStart, searchEnd, timeZone, "earliest");
 }
 
 /**
- * Find the *best* run of `days` consecutive days — what a human organising a
- * vacation means: the span where the most people have time for the most
- * days. With a realistic holiday calendar in the data, short vacations land
- * on the next free weekend and long ones in school breaks and summer leave,
- * instead of "tomorrow, if all seven of you quit your jobs".
+ * Find the *best* run of `days` consecutive local days — what a human
+ * organising a vacation means: the span where the most people have time for
+ * the most days. With a realistic holiday calendar in the data, short
+ * vacations land on the next free weekend and long ones in school breaks and
+ * summer leave, instead of "tomorrow, if all seven of you quit your jobs".
  */
 export function findBestDaySpan(
   participants: Participant[],
   days: number,
   searchStart: string,
   searchEnd: string,
+  timeZone: string,
 ): MultiDayResult {
-  return searchDaySpans(participants, days, searchStart, searchEnd, "best");
+  return searchDaySpans(participants, days, searchStart, searchEnd, timeZone, "best");
 }
 
 /* ----------------------------------------------------------------------------
@@ -534,13 +578,13 @@ export function findBestDaySpan(
  * spanDays: 3, startHour: 17, endHour: 21 }.
  */
 export interface WeeklySpanShape {
-  /** UTC day-of-week the span starts on (0 = Sunday … 6 = Saturday). */
+  /** Local day-of-week the span starts on (0 = Sunday … 6 = Saturday). */
   anchorDow: number;
   /** How many calendar days the span touches (Fri to Sun = 3). */
   spanDays: number;
-  /** Hour of day the span starts on its first day. */
+  /** Local hour of day the span starts on its first day. */
   startHour: number;
-  /** Hour of day the span ends on its last day. */
+  /** Local hour of day the span ends on its last day. */
   endHour: number;
 }
 
@@ -556,6 +600,7 @@ export function findWeeklySpan(
   shape: WeeklySpanShape,
   searchStart: string,
   searchEnd: string,
+  timeZone: string,
 ): MultiDayResult {
   const range = parseRange(searchStart, searchEnd);
   if (!range || !Number.isInteger(shape.spanDays) || shape.spanDays <= 0) {
@@ -563,13 +608,15 @@ export function findWeeklySpan(
   }
 
   // The first candidate anchor day on/after the search start.
-  let anchor = utcMidnightCeil(range.start);
-  while (new Date(anchor).getUTCDay() !== shape.anchorDow) anchor += MS_PER_DAY;
+  let anchor = startOfDayCeil(range.start, timeZone);
+  while (dayOfWeek(anchor, timeZone) !== shape.anchorDow) {
+    anchor = addDays(anchor, 1, timeZone);
+  }
 
-  for (; ; anchor += 7 * MS_PER_DAY) {
-    const spanStart = anchor + shape.startHour * MS_PER_HOUR;
-    const spanEnd =
-      anchor + (shape.spanDays - 1) * MS_PER_DAY + shape.endHour * MS_PER_HOUR;
+  for (; ; anchor = addDays(anchor, 7, timeZone)) {
+    const spanStart = atHour(anchor, shape.startHour, timeZone);
+    const lastDay = addDays(anchor, shape.spanDays - 1, timeZone);
+    const spanEnd = atHour(lastDay, shape.endHour, timeZone);
     if (spanEnd > range.end) break; // ran out of data
 
     const blocked = participants.some((p) =>
@@ -620,6 +667,7 @@ export function findVacationSuggestions(
   days: number,
   searchStart: string,
   searchEnd: string,
+  timeZone: string,
 ): VacationSuggestion[] {
   const build = (d: number, res: MultiDayResult): VacationSuggestion | null =>
     res.slot === null
@@ -629,12 +677,17 @@ export function findVacationSuggestions(
           days: d,
           slot: res.slot,
           conflicts: res.conflicts,
-          ...spanTiming(participants, Date.parse(res.slot.start), Date.parse(res.slot.end)),
+          ...spanTiming(
+            participants,
+            Date.parse(res.slot.start),
+            Date.parse(res.slot.end),
+            timeZone,
+          ),
         };
 
   // Try trimming one, then two days: the longest clean shorter stay wins.
   for (let d = days - 1; d >= Math.max(2, days - 2); d--) {
-    const res = findBestDaySpan(participants, d, searchStart, searchEnd);
+    const res = findBestDaySpan(participants, d, searchStart, searchEnd, timeZone);
     if (res.slot && res.conflicts.length === 0) {
       const s = build(d, res);
       return s ? [s] : [];
@@ -644,7 +697,10 @@ export function findVacationSuggestions(
   // Nothing clean even when shorter: offer the least-bad one-day-shorter
   // option so the user still gets a concrete counter-proposal.
   if (days > 2) {
-    const s = build(days - 1, findBestDaySpan(participants, days - 1, searchStart, searchEnd));
+    const s = build(
+      days - 1,
+      findBestDaySpan(participants, days - 1, searchStart, searchEnd, timeZone),
+    );
     if (s) return [s];
   }
   return [];
@@ -655,7 +711,10 @@ function spanTiming(
   participants: Participant[],
   startMs: number,
   endMs: number,
+  timeZone: string,
 ): { leaveAfterWork: boolean; homeBeforeWork: boolean } {
+  const departure = atHour(startMs, DEPARTURE_HOUR, timeZone);
+  const dayAfter = addDays(endMs, 1, timeZone);
   let leaveAfterWork = false;
   let homeBeforeWork = false;
   for (const p of participants) {
@@ -664,9 +723,9 @@ function spanTiming(
       const iv = parseBlock(b);
       if (!iv) continue;
       // A commitment on the departure day that ends before the evening.
-      if (iv.end > startMs && iv.end <= startMs + DEPARTURE_MS) leaveAfterWork = true;
+      if (iv.end > startMs && iv.end <= departure) leaveAfterWork = true;
       // A commitment starting the day right after the span ends.
-      if (iv.start >= endMs && iv.start < endMs + MS_PER_DAY) homeBeforeWork = true;
+      if (iv.start >= endMs && iv.start < dayAfter) homeBeforeWork = true;
     }
   }
   return { leaveAfterWork, homeBeforeWork };

@@ -2,8 +2,8 @@ import { Star } from "lucide-react";
 
 import type { MonthGrid } from "@/lib/heatmap";
 import { ACCENT_RGB, AMBER_RGB } from "@/lib/colors";
-import { DAY_MS } from "@/lib/day";
 import { cn } from "@/lib/utils";
+import { addDays } from "@/lib/zone";
 
 /**
  * The product card's calendar. A clean light month grid that fits the website,
@@ -19,6 +19,7 @@ export default function CalendarPanel({
   bestSpanDays,
   bestTimeLabel,
   todayDay,
+  timeZone,
 }: {
   grid: MonthGrid;
   bestDay: string | null;
@@ -26,8 +27,12 @@ export default function CalendarPanel({
   bestSpanDays: number;
   bestTimeLabel: string | null;
   todayDay: string | null;
+  /** The zone the grid's days are local to. */
+  timeZone: string;
 }) {
   const bestMs = bestDay ? Date.parse(bestDay) : null;
+  // Where the highlighted run ends: counted in local days, not 24 h steps.
+  const bestEndMs = bestMs === null ? null : addDays(bestMs, bestSpanDays, timeZone);
   return (
     <div className="overflow-hidden rounded-xl border bg-card">
       {/* Weekday headers */}
@@ -61,14 +66,14 @@ export default function CalendarPanel({
             inMonth &&
             !cell.isPast &&
             cellMs >= bestMs &&
-            cellMs < bestMs + bestSpanDays * DAY_MS;
+            cellMs < bestEndMs;
           const isBestStart = inBestSpan && cellMs === bestMs;
           // The 1st of a month is labelled with its abbreviation, e.g. "1. jul.".
           const numberLabel =
             cell.dayOfMonth === 1
               ? `1. ${new Date(cell.date).toLocaleString("da-DK", {
                   month: "short",
-                  timeZone: "UTC",
+                  timeZone,
                 })}`
               : cell.dayOfMonth;
 
