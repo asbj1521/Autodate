@@ -1,23 +1,30 @@
 import { Check, ChevronDown, Plus, Users } from "lucide-react";
 
 import Popover from "@/components/Popover";
+import RollingText from "@/components/RollingText";
 import { cn } from "@/lib/utils";
-import type { FriendGroup } from "@/types";
+import type { SchedulingGroup } from "@/hooks/useSchedulingGroups";
 
 /**
  * A dropdown to switch which friend group you're scheduling for. Used in two
  * places — the hero and the card title — via the `variant` prop, so users see
  * the "pick your group" idea immediately and again in context.
+ *
+ * The example group shown to people with no groups of their own is labelled
+ * as one here too: it is the first thing anyone reads, and a made-up group
+ * that doesn't say so is worse than no group at all.
  */
 export default function GroupSwitcher({
   groups,
   selectedId,
   onChange,
+  onCreate,
   variant,
 }: {
-  groups: FriendGroup[];
+  groups: SchedulingGroup[];
   selectedId: string;
   onChange: (id: string) => void;
+  onCreate: () => void;
   variant: "hero" | "title";
 }) {
   const selected = groups.find((g) => g.id === selectedId);
@@ -35,9 +42,14 @@ export default function GroupSwitcher({
       panelClassName="w-full min-w-[15rem]"
       trigger={(open) => (
         <>
-          <span className="flex items-center gap-2">
-            {hero && <Users className="h-4 w-4 text-primary" />}
-            {selected?.name ?? "Select group"}
+          <span className="flex min-w-0 items-center gap-2">
+            {hero && <Users className="h-4 w-4 shrink-0 text-primary" />}
+            <RollingText text={selected?.name ?? "Select group"} className="min-w-0" />
+            {selected?.isExample && (
+              <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                Example
+              </span>
+            )}
           </span>
           <ChevronDown
             className={cn(
@@ -63,17 +75,30 @@ export default function GroupSwitcher({
               }}
               className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition hover:bg-secondary"
             >
-              <span className="font-medium text-foreground">{g.name}</span>
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="truncate font-medium text-foreground">{g.name}</span>
+                {g.isExample && (
+                  <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                    Example
+                  </span>
+                )}
+              </span>
               <span className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">
-                  {g.participants.length}
+                  {g.memberCount}
                 </span>
                 {g.id === selectedId && <Check className="h-4 w-4 text-primary" />}
               </span>
             </button>
           ))}
           <div className="mt-1 border-t pt-1">
-            <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-primary transition hover:bg-secondary">
+            <button
+              onClick={() => {
+                onCreate();
+                close();
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-primary transition hover:bg-secondary"
+            >
               <Plus className="h-4 w-4" />
               New group
             </button>

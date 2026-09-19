@@ -7,6 +7,10 @@ import { ALL_DOWS, DOW_SHORT } from "@/lib/weekdays";
  * them. Chips inside the marked (accent) zone are the days being searched —
  * or, for a trip, the days the trip covers; chips in the dashed zone are off.
  * Tapping a chip slides it across (Framer Motion layout animation).
+ *
+ * Both zones wrap their chips. Seven of them plus a label is wider than the
+ * column the slider now lives in, and a row that can't wrap doesn't shrink,
+ * it just spills out past the card's edge.
  */
 export default function DaySlider({
   selected,
@@ -34,7 +38,7 @@ export default function DaySlider({
   return (
     <LayoutGroup>
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex min-h-[34px] items-center gap-1 rounded-lg border border-primary/40 bg-primary/5 px-1.5 py-1">
+        <div className="flex min-h-[34px] flex-wrap items-center gap-1 rounded-lg border border-primary/40 bg-primary/5 px-1.5 py-1">
           <span className="px-1 text-[10px] font-medium uppercase tracking-wide text-primary">
             {zoneLabel}
           </span>
@@ -49,7 +53,7 @@ export default function DaySlider({
             </motion.button>
           ))}
         </div>
-        <div className="flex min-h-[34px] items-center gap-1 rounded-lg border border-dashed px-1.5 py-1">
+        <div className="flex min-h-[34px] flex-wrap items-center gap-1 rounded-lg border border-dashed px-1.5 py-1">
           {outZone.length === 0 ? (
             <span className="px-1 text-[10px] text-muted-foreground">
               All days on

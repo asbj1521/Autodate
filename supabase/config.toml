@@ -425,6 +425,13 @@ verify_jwt = false
 # connections can be removed.
 verify_jwt = false
 
+[functions.groups]
+# Every action but one checks the caller's login in code (_shared/auth.ts) and
+# only ever acts on groups they are a member of. "preview" answers signed out
+# on purpose, so someone following an invite link can see what they are about
+# to join before signing in; the link itself is what proves they were sent it.
+verify_jwt = false
+
 [functions.calendar-sync]
 # Two callers, both checked in code: the hourly pg_cron job by a shared secret
 # (x-sync-secret), and a signed-in person's "Sync now" by their login

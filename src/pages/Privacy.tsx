@@ -8,7 +8,7 @@ import TopNav from "@/components/TopNav";
  * stored or who can see it changes.
  */
 
-const UPDATED = "20 September 2026";
+const UPDATED = "21 September 2026";
 const CONTACT_EMAIL = "asbjornbay@gmail.com";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -56,6 +56,11 @@ export default function Privacy() {
               requested or stored; for calendar links they are removed before anything is saved.
             </li>
             <li>
+              <span className="font-medium text-foreground">Groups:</span> the name of each group
+              you are in, who else is in it, and the invite links made for it. Invite links are
+              stored as a fingerprint that cannot be turned back into a working link.
+            </li>
+            <li>
               <span className="font-medium text-foreground">Access credentials:</span> what is needed
               to keep your calendars up to date: access tokens from Google or Microsoft, an iCloud
               app-specific password, or a calendar link. These are encrypted before they are stored,
@@ -67,8 +72,7 @@ export default function Privacy() {
         <Section title="How it is used">
           <p>
             Busy times are used only to show when you and your groups are free and to suggest
-            times. Casy refreshes them about once an hour so they stay current. Today only you can
-            see your own busy times.
+            times. Casy refreshes them about once an hour so they stay current.
           </p>
           <p>
             Casy&apos;s use and transfer of information received from Google APIs adheres to the{" "}
@@ -79,6 +83,27 @@ export default function Privacy() {
               Google API Services User Data Policy
             </a>
             , including the Limited Use requirements.
+          </p>
+        </Section>
+
+        <Section title="What other people in your groups can see">
+          <p>
+            Joining a group means the other members can see your name and when you are busy. That
+            is the whole point of a group: Casy cannot find a time that works for everyone without
+            it. Busy periods are shown as time ranges, plus whether a range came from a calendar
+            you marked as work or school, which is what lets Casy tell "could take time off" apart
+            from "not possible".
+          </p>
+          <p>
+            Members do not see your email address, the names of your calendars, which accounts you
+            connected, or what any of your events are called. Casy never stores event titles at
+            all, so there is nothing there to reveal.
+          </p>
+          <p>
+            Anyone holding a group&apos;s invite link can see the group&apos;s name and how many
+            members it has, and can join it, for the seven days the link works. Treat an invite
+            link like an address you would only send to people you want in the group. Leaving a
+            group stops the other members seeing anything about you from then on.
           </p>
         </Section>
 
@@ -97,6 +122,10 @@ export default function Privacy() {
             Casy immediately. To stop the provider&apos;s side as well, remove Casy&apos;s access in
             your Google or Microsoft account settings, or delete the app-specific password at
             account.apple.com.
+          </p>
+          <p>
+            Leaving a group removes you from it straight away, and the other members stop seeing
+            anything about you. If you were the last member, the group is deleted with you.
           </p>
           <p>
             To delete your Casy account entirely, email{" "}

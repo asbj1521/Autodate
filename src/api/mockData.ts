@@ -4,8 +4,12 @@
  * Stands in for what will eventually be Supabase + the real Google/Outlook
  * free-busy APIs. The important thing is the *shape* of what these functions
  * return: when we wire up real backends later, only the insides change — the
- * rest of the app keeps calling `getMockGroups()` / `buildEventForGroup()` the
+ * rest of the app keeps calling `exampleGroup()` / `buildEventForGroup()` the
  * same way.
+ *
+ * These groups are the example carousel on the front page: ten made-up groups
+ * shown to anyone who has not created a real one yet. Real groups and their
+ * members' real busy times come from the database instead (src/api/groups.ts).
  *
  * Availability is fully emergent. Every unique person is given a seeded
  * "personality" — five traits scored 1–5 (work, study, social, family, other) —
@@ -68,80 +72,151 @@ const SEARCH_END = iso(PLAN_END);
 export const SEARCH_WINDOW = { start: SEARCH_START, end: SEARCH_END };
 
 /* ----------------------------------------------------------------------------
- * People & groups
+ * Example people & groups
  *
- * Every unique person is defined exactly once in PEOPLE. Groups reference them
- * by id, so each person has a single calendar — Asbjørn appears in three groups
- * but shares ONE generated personality + calendar across all of them.
+ * Ten made-up groups the front page cycles through, so someone who has not
+ * made a real group yet sees what Casy is for rather than an empty screen.
+ * They are obviously examples on purpose: a basketball squad, a book club, a
+ * family. Nothing here is a real person.
+ *
+ * Every unique person is defined exactly once in PEOPLE and referenced by id,
+ * so anyone who turns up in two groups shares ONE generated personality and
+ * calendar across both, the way a real person would.
+ *
+ * "you" is the slot the signed-in person's own real calendar is swapped into
+ * (see src/lib/realCalendar.ts), which is what makes an example worth looking
+ * at: the rest is invented, but your own busy time is not.
  * ------------------------------------------------------------------------- */
 
 const PEOPLE: Record<string, string> = {
-  // Ikke Almene HA'ere
-  asbjorn: "Asbjørn Bay",
-  simon: "Simon Liocouras",
-  kristoffer: "Kristoffer Winther",
-  jonas: "Jonas Eriksen",
-  thue: "Thue Fransen",
-  claes: "Claes Fransen",
-  benjamin: "Benjamin Glover",
-  // Vejlederholdet
-  prusse: "Prüsse",
-  thille: "Thille",
-  thind: "Thind",
-  borring: "Borring",
-  nico: "Nico",
-  schlei: "Schlei",
-  philip: "Philip",
-  ottesen: "Ottesen",
-  nora: "Nora",
+  you: "You",
+  // Basketball
+  mikkel: "Mikkel",
+  rasmus: "Rasmus",
+  oliver: "Oliver",
+  emil: "Emil",
+  noah: "Noah",
+  villads: "Villads",
+  august: "August",
+  malthe: "Malthe",
+  elias: "Elias",
+  // Highschool
+  simon: "Simon",
+  kristoffer: "Kristoffer",
+  jonas: "Jonas",
+  thue: "Thue",
+  claes: "Claes",
+  benjamin: "Benjamin",
   // Family
   hansove: "Hans Ove",
   anne: "Anne",
   regitze: "Regitze",
   aksel: "Aksel",
+  // Book club
+  ida: "Ida",
+  sofie: "Sofie",
+  clara: "Clara",
+  johanne: "Johanne",
+  marie: "Marie",
+  // Study group
+  freja: "Freja",
+  lucas: "Lucas",
+  alma: "Alma",
+  // Work
+  prusse: "Prüsse",
+  thille: "Thille",
+  borring: "Borring",
+  nico: "Nico",
+  schlei: "Schlei",
+  nora: "Nora",
+  // Running club
+  katrine: "Katrine",
+  jeppe: "Jeppe",
+  signe: "Signe",
+  anders: "Anders",
+  louise: "Louise",
+  // Band
+  viggo: "Viggo",
+  karla: "Karla",
+  storm: "Storm",
+  // Neighbours
+  birgitte: "Birgitte",
+  poul: "Poul",
+  hanne: "Hanne",
+  soren: "Søren",
+  lene: "Lene",
+  kurt: "Kurt",
+  // Old friends
+  frederik: "Frederik",
+  laura: "Laura",
+  tobias: "Tobias",
+  amalie: "Amalie",
+  gustav: "Gustav",
 };
 
-interface GroupDef {
+/** One of the example groups: a name and who is in it. */
+export interface ExampleGroupDef {
   id: string;
   name: string;
-  /** Person ids (keys of PEOPLE). */
+  /** Person ids (keys of PEOPLE); "you" is the signed-in person's slot. */
   members: string[];
 }
 
-const GROUP_DEFS: GroupDef[] = [
+/**
+ * The ten groups the front page rotates through. Sizes are meant to look
+ * right for what they are — a basketball squad has ten, a band has four —
+ * because an example that doesn't look plausible teaches nothing.
+ */
+export const EXAMPLE_GROUPS: ExampleGroupDef[] = [
+  {
+    id: "basketball",
+    name: "Basketball team",
+    members: ["you", "mikkel", "rasmus", "oliver", "emil", "noah", "villads", "august", "malthe", "elias"],
+  },
   {
     id: "highschool",
-    name: "Ikke Almene HA'ere",
-    members: [
-      "asbjorn",
-      "simon",
-      "kristoffer",
-      "jonas",
-      "thue",
-      "claes",
-      "benjamin",
-    ],
+    name: "Highschool group",
+    members: ["you", "simon", "kristoffer", "jonas", "thue", "claes", "benjamin"],
+  },
+  {
+    id: "family",
+    name: "Family",
+    members: ["you", "hansove", "anne", "regitze", "aksel"],
+  },
+  {
+    id: "bookclub",
+    name: "Book club",
+    members: ["you", "ida", "sofie", "clara", "johanne", "marie"],
+  },
+  {
+    id: "studygroup",
+    name: "Study group",
+    members: ["you", "freja", "lucas", "alma"],
   },
   {
     id: "work",
-    name: "Vejlederholdet",
-    members: [
-      "prusse",
-      "thille",
-      "thind",
-      "borring",
-      "nico",
-      "schlei",
-      "philip",
-      "asbjorn",
-      "ottesen",
-      "nora",
-    ],
+    name: "Work team",
+    members: ["you", "prusse", "thille", "borring", "nico", "schlei", "nora"],
   },
   {
-    id: "climbing",
-    name: "Family",
-    members: ["hansove", "anne", "regitze", "aksel", "asbjorn"],
+    id: "running",
+    name: "Running club",
+    members: ["you", "katrine", "jeppe", "signe", "anders", "louise"],
+  },
+  {
+    id: "band",
+    name: "The band",
+    members: ["you", "viggo", "karla", "storm"],
+  },
+  {
+    id: "neighbours",
+    name: "Neighbours",
+    members: ["you", "birgitte", "poul", "hanne", "soren", "lene", "kurt"],
+  },
+  {
+    id: "oldfriends",
+    name: "Old friends",
+    members: ["you", "frederik", "laura", "tobias", "amalie", "gustav"],
   },
 ];
 
@@ -588,38 +663,46 @@ function generateCalendar(personId: string): BusyInterval[] {
  * then assemble participants. The cache is what guarantees Asbjørn shares one
  * calendar across every group.
  */
-function buildGroups(): FriendGroup[] {
-  const cache = new Map<string, BusyInterval[]>();
-  const calendarFor = (id: string): BusyInterval[] => {
-    let cal = cache.get(id);
-    if (!cal) {
-      cal = generateCalendar(id);
-      cache.set(id, cal);
-    }
-    return cal;
-  };
+const calendarCache = new Map<string, BusyInterval[]>();
 
-  return GROUP_DEFS.map((def) => ({
+/** One person's generated calendar, built once and kept. */
+function calendarFor(id: string): BusyInterval[] {
+  let cal = calendarCache.get(id);
+  if (!cal) {
+    cal = generateCalendar(id);
+    calendarCache.set(id, cal);
+  }
+  return cal;
+}
+
+const groupCache = new Map<string, FriendGroup>();
+
+/**
+ * One example group, with its people's calendars.
+ *
+ * Built on demand rather than all ten up front: generating a year of events
+ * for sixty people is most of a second's work, and the front page only ever
+ * shows one group at a time. The cost lands as each group is first shown, and
+ * the cache means a group the carousel comes back around to is free.
+ */
+export function exampleGroup(id: string): FriendGroup | null {
+  const cached = groupCache.get(id);
+  if (cached) return cached;
+
+  const def = EXAMPLE_GROUPS.find((g) => g.id === id);
+  if (!def) return null;
+
+  const group: FriendGroup = {
     id: def.id,
     name: def.name,
-    participants: def.members.map<Participant>((id) => ({
-      profileId: id,
-      name: PEOPLE[id],
-      busy: calendarFor(id),
+    participants: def.members.map<Participant>((personId) => ({
+      profileId: personId,
+      name: PEOPLE[personId],
+      busy: calendarFor(personId),
     })),
-  }));
-}
-
-const GROUPS: FriendGroup[] = buildGroups();
-
-/** Small artificial delay so the UI's loading state is exercised realistically. */
-function delay<T>(value: T, ms = 350): Promise<T> {
-  return new Promise((resolve) => setTimeout(() => resolve(value), ms));
-}
-
-/** Get the user's friend groups (stands in for "fetch my groups"). */
-export async function getMockGroups(): Promise<FriendGroup[]> {
-  return delay(GROUPS);
+  };
+  groupCache.set(id, group);
+  return group;
 }
 
 /**

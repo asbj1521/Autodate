@@ -19,9 +19,24 @@ export async function callerId(
   req: Request,
   db: ReturnType<typeof supabaseAdmin>,
 ): Promise<string | null> {
+  return (await callerUser(req, db))?.id ?? null;
+}
+
+/**
+ * The whole verified user, for the callers that need more than the id.
+ *
+ * The groups function copies people's display names out of their own login,
+ * and asking Supabase Auth about the same token twice per request (once for
+ * the id, once for the name) is a second round trip for something the first
+ * answer already contained.
+ */
+export async function callerUser(
+  req: Request,
+  db: ReturnType<typeof supabaseAdmin>,
+): Promise<{ id: string; email?: string | null; user_metadata?: Record<string, unknown> } | null> {
   const token = req.headers.get("Authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
   if (!token) return null;
   const { data, error } = await db.auth.getUser(token);
   if (error || !data.user) return null;
-  return data.user.id;
+  return data.user;
 }

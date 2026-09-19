@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertTriangle,
@@ -18,12 +18,16 @@ import {
   Tag,
 } from "lucide-react";
 
-import { CURRENT_USER_ID } from "@/api/currentUser";
+import {
+  createGroup,
+  createInvite,
+  leaveGroup,
+  type Group,
+} from "@/api/groups";
 import {
   buildEventForGroup,
   DAY_END,
   DAY_START,
-  getMockGroups,
   SEARCH_WINDOW,
 } from "@/api/mockData";
 import {
@@ -35,11 +39,9 @@ import {
   type VacationSuggestion,
   type WeeklySpanShape,
 } from "@/lib/availability";
-import type { OverviewData } from "@/lib/calendarOverview";
 import { buildMonthGrid } from "@/lib/heatmap";
-import { busyFromCalendars, withRealCalendar } from "@/lib/realCalendar";
-import { callFunction } from "@/lib/supabaseFunctions";
-import { displayName, useAuth } from "@/context/auth";
+import { useSchedulingGroups } from "@/hooks/useSchedulingGroups";
+import { useAuth } from "@/context/auth";
 import { formatDaySpan, formatSlot, formatTime, formatTripSpan } from "@/lib/format";
 import type { SchedulingResult } from "@/types";
 import { avatarColor } from "@/lib/avatar";
@@ -51,7 +53,9 @@ import { addDays, APP_TIME_ZONE, localDate, startOfMonth } from "@/lib/zone";
 import CalendarPanel from "@/components/CalendarPanel";
 import DaySlider from "@/components/DaySlider";
 import Dropdown from "@/components/Dropdown";
+import GroupPanel from "@/components/GroupPanel";
 import GroupSwitcher from "@/components/GroupSwitcher";
+import NewGroupDialog from "@/components/NewGroupDialog";
 import TopNav from "@/components/TopNav";
 
 /**
@@ -178,6 +182,7 @@ function nameList(names: string[]): string {
 export default function FindDate() {
   const [copied, setCopied] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [newGroupOpen, setNewGroupOpen] = useState(false);
   const [eventTypeIdx, setEventTypeIdx] = useState(0);
   const [durationMinutes, setDurationMinutes] = useState(180);
   const [startHour, setStartHour] = useState(18);
@@ -202,46 +207,69 @@ export default function FindDate() {
   // Don't leave the "Copied!" timer running after the page goes away.
   useEffect(() => () => clearTimeout(copiedTimer.current), []);
 
-  const { data: mockGroups } = useQuery({
-    queryKey: ["mock-groups"],
-    queryFn: getMockGroups,
-  });
-
-  // The signed-in person's real busy time across the whole search window.
-  // Keyed under "calendar-busy" so changing a calendar's category on the
-  // overview page refreshes this too.
+  // Real groups and everyone's real busy time, or the labelled example group
+  // for someone who has not made a group yet. See the hook for which is which.
   const { user } = useAuth();
-  const { data: myCalendars, isError: myCalendarsFailed } = useQuery({
-    queryKey: ["calendar-busy", user?.id, "search-window"],
-    queryFn: () =>
-      callFunction<OverviewData>("calendar-busy", {
-        params: { from: SEARCH_WINDOW.start, to: SEARCH_WINDOW.end },
-        errorMessage: "Couldn't load your calendars",
-      }),
-    enabled: !!user,
-    staleTime: 60_000,
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const {
+    groups,
+    activeGroup,
+    activeGroupId,
+    busyLoading,
+    busyFailed,
+    myCalendarsFailed,
+    youProfileId,
+    carousel,
+  } = useSchedulingGroups(selectedGroupId);
+
+  /**
+   * Any touch of either card stops the example carousel, for good.
+   *
+   * One capture handler per card rather than a call inside every button: the
+   * rule is "if you are using the page, it is not a demo any more", and that
+   * is easier to keep true in one place than across a dozen handlers that
+   * will grow over time. Pinning the current example as the selection too,
+   * so it can't move on between the click and the next render.
+   */
+  function stopCarousel() {
+    if (!carousel.running) return;
+    setSelectedGroupId((id) => id ?? activeGroupId);
+    carousel.stop();
+  }
+
+  // Anything that changes membership answers with the new list of groups, so
+  // the cache is filled from the reply instead of asking for it again.
+  const onGroupsChanged = (data: { groups: Group[] }) => {
+    queryClient.setQueryData(["groups", user?.id ?? ""], data.groups);
+  };
+
+  const createMutation = useMutation({
+    mutationFn: createGroup,
+    onSuccess: (data) => {
+      onGroupsChanged(data);
+      setSelectedGroupId(data.createdId);
+      setNewGroupOpen(false);
+    },
   });
 
-  // Real data replaces your generated calendar only once there is some: with
-  // nothing connected you would read as free all year, which is less honest
-  // than the example. Everyone else stays generated until they have accounts.
-  const usingRealCalendar = !!user && (myCalendars?.calendars.length ?? 0) > 0;
-  const groups = useMemo(
-    () =>
-      mockGroups && usingRealCalendar
-        ? withRealCalendar(
-            mockGroups,
-            CURRENT_USER_ID,
-            displayName(user),
-            busyFromCalendars(myCalendars),
-          )
-        : mockGroups,
-    [mockGroups, usingRealCalendar, user, myCalendars],
-  );
+  const inviteMutation = useMutation({ mutationFn: createInvite });
 
-  // Default to the first group once loaded; otherwise honour the user's choice.
-  const activeGroupId = selectedGroupId ?? groups?.[0]?.id ?? null;
-  const activeGroup = groups?.find((g) => g.id === activeGroupId) ?? null;
+  const leaveMutation = useMutation({
+    mutationFn: leaveGroup,
+    onSuccess: (data) => {
+      onGroupsChanged(data);
+      setSelectedGroupId(null);
+      inviteMutation.reset();
+    },
+  });
+
+  // A link belongs to the group it was made for; switching groups must not
+  // leave the previous group's invite on screen.
+  const invite =
+    inviteMutation.data && inviteMutation.variables === activeGroupId
+      ? inviteMutation.data
+      : null;
 
   const eventType = EVENT_TYPES[eventTypeIdx];
   const isMultiDay = eventType.kind !== "single";
@@ -404,6 +432,21 @@ export default function FindDate() {
     resetSearch(); // re-anchor to the earliest slot for the new group
     setSlideDir(-1);
     setViewMonth(DEFAULT_MONTH); // show the new group from the current month
+    inviteMutation.reset(); // a link belongs to the group it was made for
+  }
+
+  /**
+   * "New group" from the switcher. Making a group needs an account, since a
+   * group with no owner is nobody's; anyone signed out is sent to sign in
+   * first and comes straight back here.
+   */
+  function handleNewGroup() {
+    if (!user) {
+      navigate("/sign-in?next=/");
+      return;
+    }
+    createMutation.reset();
+    setNewGroupOpen(true);
   }
 
   function handleEventType(idx: number) {
@@ -527,9 +570,9 @@ export default function FindDate() {
   // Conflict review state for multi-day spans. Your own work/school conflicts
   // need your explicit approval; other people's put the dates under review.
   const selfConflict =
-    multiResult?.conflicts.find((c) => c.profileId === CURRENT_USER_ID) ?? null;
+    multiResult?.conflicts.find((c) => c.profileId === youProfileId) ?? null;
   const otherConflicts =
-    multiResult?.conflicts.filter((c) => c.profileId !== CURRENT_USER_ID) ?? [];
+    multiResult?.conflicts.filter((c) => c.profileId !== youProfileId) ?? [];
   const selfAccepted =
     multiResult?.slot != null && acceptedSlot === multiResult.slot.start;
   const needsSelfApproval = selfConflict !== null && !selfAccepted;
@@ -545,208 +588,268 @@ export default function FindDate() {
     <div className="min-h-screen bg-background">
       <TopNav />
 
-      {/* ───────── Hero ───────── */}
-      <header className="mx-auto max-w-6xl px-6 pt-16 pb-12">
-        <div className="flex flex-col items-start gap-10 lg:flex-row lg:items-center lg:justify-between">
-          {/* Left: value proposition */}
-          <div className="max-w-xl">
-            <h1 className="text-5xl font-bold leading-tight tracking-tight text-foreground sm:text-6xl">
-              Find a time to meet.
-            </h1>
-            <p className="mt-5 text-lg text-muted-foreground">
-              Casy syncs everyone's calendars and finds the earliest window
-              that works for your whole group — automatically.
-            </p>
-          </div>
+      {/*
+        A working page, not a poster: the calendar is what people came for, so
+        it starts near the top of the screen and takes the full width. The
+        pitch is one small line above it, and everything you set before
+        searching lives in the column beside it rather than stacked on top,
+        which is what used to push the calendar below the fold.
+      */}
+      <div className="px-4 pb-16 pt-4 sm:px-6 lg:px-8">
+        <header className="mb-4">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+            Find a time to meet.
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Casy syncs everyone's calendars and finds the earliest window that works for your
+            whole group, automatically.
+          </p>
+        </header>
 
-          {/* Right: pick a group + create */}
-          {groups && activeGroupId && (
-            <div className="w-full rounded-2xl border bg-card p-6 shadow-sm lg:w-80 lg:shrink-0">
-              <span className="text-sm font-medium text-muted-foreground">
-                Scheduling for
-              </span>
-              <div className="mt-2">
-                <GroupSwitcher
-                  groups={groups}
-                  selectedId={activeGroupId}
-                  onChange={handleSelectGroup}
-                  variant="hero"
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+          {/* ───────── Controls: who, and what kind of event ───────── */}
+          <aside
+            onPointerDownCapture={stopCarousel}
+            onFocusCapture={stopCarousel}
+            className="w-full lg:sticky lg:top-4 lg:w-[21rem] lg:shrink-0 xl:w-[23rem]"
+          >
+            {groups && activeGroupId && (
+              <div className="rounded-2xl border bg-card p-5 shadow-sm">
+                <span className="text-sm font-medium text-muted-foreground">
+                  Scheduling for
+                </span>
+                <div className="mt-2">
+                  <GroupSwitcher
+                    groups={groups}
+                    selectedId={activeGroupId}
+                    onChange={handleSelectGroup}
+                    onCreate={handleNewGroup}
+                    variant="hero"
+                  />
+                </div>
+
+                {/* Event settings: what kind of event, then either how many
+                    days (multi-day) or how long + what time it starts. */}
+                <div className="mt-4 border-t pt-4">
+                  <span className="text-sm font-medium text-muted-foreground">
+                    What kind of event
+                  </span>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <Dropdown
+                      icon={<Tag className="h-3.5 w-3.5 text-muted-foreground" />}
+                      value={eventTypeIdx}
+                      options={TYPE_OPTIONS}
+                      onChange={handleEventType}
+                      menuWidth="w-44"
+                    />
+                    {eventType.kind === "vacation" && (
+                      <Dropdown
+                        icon={<CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />}
+                        value={days}
+                        options={DAYS_OPTIONS}
+                        onChange={handleDays}
+                      />
+                    )}
+                    {eventType.kind === "single" && (
+                      <>
+                        <Dropdown
+                          icon={<Hourglass className="h-3.5 w-3.5 text-muted-foreground" />}
+                          value={durationMinutes}
+                          options={DURATION_OPTIONS}
+                          onChange={handleDuration}
+                        />
+                        <Dropdown
+                          icon={<Clock className="h-3.5 w-3.5 text-muted-foreground" />}
+                          value={startHour}
+                          options={START_OPTIONS}
+                          onChange={handleStartHour}
+                        />
+                      </>
+                    )}
+                  </div>
+                  {/* Day slider: which weekdays are searched (single events) or
+                      covered by the trip. Vacations span any days, so none there. */}
+                  {eventType.kind !== "vacation" && (
+                    <div className="mt-3">
+                      <DaySlider
+                        selected={selectedDows}
+                        onChange={handleDows}
+                        zoneLabel={eventType.kind === "trip" ? "Trip days" : "Searching"}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  onClick={handleCreateEvent}
+                  disabled={!event}
+                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-primary px-7 py-3 font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition hover:opacity-90 disabled:opacity-60"
+                >
+                  <Plus className="h-5 w-5" />
+                  Create event
+                </button>
+              </div>
+            )}
+
+            {activeGroup && (
+              <div className="mt-4">
+                <GroupPanel
+                  group={activeGroup}
+                  carouselRunning={carousel.running}
+                  busyLoading={busyLoading}
+                  inviteUrl={invite?.url ?? null}
+                  inviteExpiresAt={invite?.expiresAt ?? null}
+                  invitePending={inviteMutation.isPending}
+                  inviteError={
+                    inviteMutation.error ? (inviteMutation.error as Error).message : null
+                  }
+                  onInvite={() => inviteMutation.mutate(activeGroup.id)}
+                  leavePending={leaveMutation.isPending}
+                  onLeave={() => leaveMutation.mutate(activeGroup.id)}
                 />
               </div>
-              <button
-                onClick={handleCreateEvent}
-                disabled={!event}
-                className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-primary px-7 py-3.5 font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition hover:opacity-90 disabled:opacity-60"
-              >
-                <Plus className="h-5 w-5" />
-                Create event
-              </button>
-            </div>
-          )}
-        </div>
-      </header>
+            )}
+          </aside>
 
-      {/* ───────── Product preview card ───────── */}
-      <main className="mx-auto max-w-6xl px-6 pb-20">
-        <div
-          ref={cardRef}
-          className="scroll-mt-6 rounded-2xl border bg-card p-6 shadow-xl shadow-black/5 sm:p-8"
-        >
-          {/* Card header */}
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <div className="flex flex-wrap items-center gap-3">
+          {/* ───────── The calendar itself ───────── */}
+          <main
+            ref={cardRef}
+            onPointerDownCapture={stopCarousel}
+            onFocusCapture={stopCarousel}
+            className="min-w-0 flex-1 scroll-mt-4 rounded-2xl border bg-card p-5 shadow-xl shadow-black/5 sm:p-6"
+          >
+            {/* Card header: which month is on screen, and the two actions. */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
                 {groups && activeGroupId ? (
                   <GroupSwitcher
                     groups={groups}
                     selectedId={activeGroupId}
                     onChange={handleSelectGroup}
+                    onCreate={handleNewGroup}
                     variant="title"
                   />
                 ) : (
                   <h2 className="text-2xl font-bold text-foreground">Loading…</h2>
                 )}
-                {/* Event settings: what kind of event, then either how many
-                    days (multi-day) or how long + what time it starts. */}
-                <Dropdown
-                  icon={<Tag className="h-3.5 w-3.5 text-muted-foreground" />}
-                  value={eventTypeIdx}
-                  options={TYPE_OPTIONS}
-                  onChange={handleEventType}
-                  menuWidth="w-44"
-                />
-                {eventType.kind === "vacation" && (
-                  <Dropdown
-                    icon={
-                      <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
-                    }
-                    value={days}
-                    options={DAYS_OPTIONS}
-                    onChange={handleDays}
-                  />
-                )}
-                {eventType.kind === "single" && (
-                  <>
-                    <Dropdown
-                      icon={
-                        <Hourglass className="h-3.5 w-3.5 text-muted-foreground" />
-                      }
-                      value={durationMinutes}
-                      options={DURATION_OPTIONS}
-                      onChange={handleDuration}
-                    />
-                    <Dropdown
-                      icon={<Clock className="h-3.5 w-3.5 text-muted-foreground" />}
-                      value={startHour}
-                      options={START_OPTIONS}
-                      onChange={handleStartHour}
-                    />
-                  </>
+                {monthGrid && (
+                  <p className="text-sm text-muted-foreground">{monthGrid.label}</p>
                 )}
               </div>
-              {/* Day slider: which weekdays are searched (single events) or
-                  covered by the trip. Vacations span any days, so none there. */}
-              {eventType.kind !== "vacation" && (
-                <div className="mt-3">
-                  <DaySlider
-                    selected={selectedDows}
-                    onChange={handleDows}
-                    zoneLabel={
-                      eventType.kind === "trip" ? "Trip days" : "Searching"
-                    }
-                  />
-                </div>
-              )}
-              {monthGrid && (
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {monthGrid.label}
-                </p>
-              )}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleCopy}
+                  className="inline-flex items-center gap-1.5 rounded-lg border bg-card px-3 py-2 text-sm font-medium text-foreground transition hover:bg-secondary"
+                >
+                  {copied ? (
+                    <Check className="h-4 w-4 text-primary" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                  {copied ? "Copied!" : "Copy link"}
+                </button>
+                <button
+                  onClick={handleFindBest}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  Find best time
+                </button>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleCopy}
-                className="inline-flex items-center gap-1.5 rounded-lg border bg-card px-3 py-2 text-sm font-medium text-foreground transition hover:bg-secondary"
-              >
-                {copied ? (
-                  <Check className="h-4 w-4 text-primary" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
-                {copied ? "Copied!" : "Copy link"}
-              </button>
-              <button
-                onClick={handleFindBest}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
-              >
-                <Sparkles className="h-4 w-4" />
-                Find best time
-              </button>
-            </div>
-          </div>
 
-          {/* Best-time banner. Single meetings: found / not found. Multi-day
-              spans add two review states — your own work/school needs your
-              approval, other people's puts the dates under review. */}
-          <AnimatePresence>
-            {(isMultiDay ? multiResult : result) && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                className="overflow-hidden"
-              >
-                {!activeSlot ? (
-                  <div className="mt-5 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
-                    {eventType.kind === "vacation" ? (
-                      <>
-                        No stretch of {days === 1 ? "1 day" : `${days} days`}{" "}
-                        works for the whole group in this range. Try fewer days
-                        or another group.
-                      </>
-                    ) : eventType.kind === "trip" ? (
-                      <>
-                        No week has a free trip window for the whole group in
-                        this range. Try changing which days the trip covers.
-                      </>
-                    ) : (
-                      <>
-                        No time works for the whole group at{" "}
-                        {String(startHour).padStart(2, "0")}:00 on the selected
-                        days in this range. Try a different start time,
-                        duration, or more days.
-                      </>
-                    )}
-                  </div>
-                ) : isMultiDay && needsSelfApproval ? (
-                  <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4">
-                    <div className="flex items-center gap-3">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white">
-                        <AlertTriangle className="h-5 w-5" />
-                      </span>
-                      <div>
-                        <p className="text-xs font-medium uppercase tracking-wide text-amber-700">
-                          Needs your approval
-                        </p>
-                        <p className="text-lg font-bold text-foreground">
-                          {slotLabel}
-                        </p>
-                        <p className="mt-0.5 text-sm text-amber-800">
-                          The earliest possible dates, but you have{" "}
-                          {selfConflictTitles} in your calendar.
-                          {otherConflicts.length > 0 &&
-                            ` ${nameList(otherConflicts.map((c) => c.name))} would also need to take time off.`}
-                        </p>
+            {/* Best-time banner. Single meetings: found / not found. Multi-day
+                spans add two review states — your own work/school needs your
+                approval, other people's puts the dates under review. */}
+            <AnimatePresence>
+              {(isMultiDay ? multiResult : result) && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden"
+                >
+                  {!activeSlot ? (
+                    <div className="mt-5 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+                      {eventType.kind === "vacation" ? (
+                        <>
+                          No stretch of {days === 1 ? "1 day" : `${days} days`}{" "}
+                          works for the whole group in this range. Try fewer days
+                          or another group.
+                        </>
+                      ) : eventType.kind === "trip" ? (
+                        <>
+                          No week has a free trip window for the whole group in
+                          this range. Try changing which days the trip covers.
+                        </>
+                      ) : (
+                        <>
+                          No time works for the whole group at{" "}
+                          {String(startHour).padStart(2, "0")}:00 on the selected
+                          days in this range. Try a different start time,
+                          duration, or more days.
+                        </>
+                      )}
+                    </div>
+                  ) : isMultiDay && needsSelfApproval ? (
+                    <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4">
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white">
+                          <AlertTriangle className="h-5 w-5" />
+                        </span>
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wide text-amber-700">
+                            Needs your approval
+                          </p>
+                          <p className="text-lg font-bold text-foreground">
+                            {slotLabel}
+                          </p>
+                          <p className="mt-0.5 text-sm text-amber-800">
+                            The earliest possible dates, but you have{" "}
+                            {selfConflictTitles} in your calendar.
+                            {otherConflicts.length > 0 &&
+                              ` ${nameList(otherConflicts.map((c) => c.name))} would also need to take time off.`}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setAcceptedSlot(activeSlot.start)}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+                        >
+                          <Check className="h-4 w-4" />
+                          Accept
+                        </button>
+                        <button
+                          onClick={handleFindNew}
+                          className="inline-flex items-center gap-1.5 rounded-lg border bg-card px-3 py-2 text-sm font-medium text-foreground transition hover:bg-secondary"
+                        >
+                          <RefreshCw className="h-4 w-4" />
+                          Find new date
+                        </button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => setAcceptedSlot(activeSlot.start)}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-2 text-sm font-semibold text-white transition hover:opacity-90"
-                      >
-                        <Check className="h-4 w-4" />
-                        Accept
-                      </button>
+                  ) : isMultiDay && otherConflicts.length > 0 ? (
+                    <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-200 bg-sky-50 p-4">
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500 text-white">
+                          <Hourglass className="h-5 w-5" />
+                        </span>
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wide text-sky-700">
+                            Dates under review
+                          </p>
+                          <p className="text-lg font-bold text-foreground">
+                            {slotLabel}
+                          </p>
+                          <p className="mt-0.5 text-sm text-sky-800">
+                            {nameList(otherConflicts.map((c) => c.name))}{" "}
+                            {otherConflicts.length === 1 ? "has" : "have"} work or
+                            school during these dates and must approve them.
+                            {selfAccepted && " You have approved taking time off."}
+                          </p>
+                        </div>
+                      </div>
                       <button
                         onClick={handleFindNew}
                         className="inline-flex items-center gap-1.5 rounded-lg border bg-card px-3 py-2 text-sm font-medium text-foreground transition hover:bg-secondary"
@@ -755,240 +858,238 @@ export default function FindDate() {
                         Find new date
                       </button>
                     </div>
-                  </div>
-                ) : isMultiDay && otherConflicts.length > 0 ? (
-                  <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-200 bg-sky-50 p-4">
-                    <div className="flex items-center gap-3">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500 text-white">
-                        <Hourglass className="h-5 w-5" />
-                      </span>
-                      <div>
-                        <p className="text-xs font-medium uppercase tracking-wide text-sky-700">
-                          Dates under review
-                        </p>
-                        <p className="text-lg font-bold text-foreground">
-                          {slotLabel}
-                        </p>
-                        <p className="mt-0.5 text-sm text-sky-800">
-                          {nameList(otherConflicts.map((c) => c.name))}{" "}
-                          {otherConflicts.length === 1 ? "has" : "have"} work or
-                          school during these dates and must approve them.
-                          {selfAccepted && " You have approved taking time off."}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={handleFindNew}
-                      className="inline-flex items-center gap-1.5 rounded-lg border bg-card px-3 py-2 text-sm font-medium text-foreground transition hover:bg-secondary"
-                    >
-                      <RefreshCw className="h-4 w-4" />
-                      Find new date
-                    </button>
-                  </div>
-                ) : (
-                  <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/30 bg-primary/5 p-4">
-                    <div className="flex items-center gap-3">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                        <Check className="h-5 w-5" />
-                      </span>
-                      <div>
-                        <p className="text-xs font-medium uppercase tracking-wide text-primary">
-                          Works for everyone
-                        </p>
-                        <p className="text-lg font-bold text-foreground">
-                          {slotLabel}
-                        </p>
-                        {isMultiDay && selfAccepted && (
-                          <p className="mt-0.5 text-sm text-muted-foreground">
-                            You approved taking time off for these dates.
+                  ) : (
+                    <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/30 bg-primary/5 p-4">
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                          <Check className="h-5 w-5" />
+                        </span>
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wide text-primary">
+                            Works for everyone
                           </p>
-                        )}
+                          <p className="text-lg font-bold text-foreground">
+                            {slotLabel}
+                          </p>
+                          {isMultiDay && selfAccepted && (
+                            <p className="mt-0.5 text-sm text-muted-foreground">
+                              You approved taking time off for these dates.
+                            </p>
+                          )}
+                        </div>
                       </div>
+                      <button
+                        onClick={handleFindNew}
+                        className="inline-flex items-center gap-1.5 rounded-lg border bg-card px-3 py-2 text-sm font-medium text-foreground transition hover:bg-secondary"
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                        {isMultiDay ? "Find new date" : "Find new time"}
+                      </button>
                     </div>
-                    <button
-                      onClick={handleFindNew}
-                      className="inline-flex items-center gap-1.5 rounded-lg border bg-card px-3 py-2 text-sm font-medium text-foreground transition hover:bg-secondary"
-                    >
-                      <RefreshCw className="h-4 w-4" />
-                      {isMultiDay ? "Find new date" : "Find new time"}
-                    </button>
-                  </div>
-                )}
+                  )}
 
-                {/* Workaround suggestions: concrete counter-proposals when the
-                    requested vacation length doesn't work cleanly. */}
-                {suggestions.map((s) => (
-                  <div
-                    key={`${s.days}-${s.slot.start}`}
-                    className="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/20 bg-card p-3"
-                  >
-                    <div className="flex items-center gap-2.5 text-sm text-foreground">
-                      <Lightbulb className="h-4 w-4 shrink-0 text-primary" />
-                      <span>
-                        {s.conflicts.length === 0 ? (
-                          <>
-                            {days === 1 ? "1 day" : `${days} days`}{" "}
-                            {multiResult?.slot ? "needs time off" : "does not fit"},
-                            but{" "}
-                            <span className="font-semibold">
-                              {s.days} days works for everyone
-                            </span>
-                            : {formatDaySpan(s.slot.start, s.slot.end)}
-                            {s.leaveAfterWork &&
-                              ", leaving after work on the first day"}
-                            {s.homeBeforeWork &&
-                              ", home before work starts again"}
-                            .
-                          </>
-                        ) : (
-                          <>
-                            Closest workaround: {s.days} days,{" "}
-                            {formatDaySpan(s.slot.start, s.slot.end)}, if{" "}
-                            {nameList(s.conflicts.map((c) => c.name))}{" "}
-                            {s.conflicts.length === 1 ? "takes" : "take"} time
-                            off.
-                          </>
-                        )}
-                      </span>
+                  {/* Workaround suggestions: concrete counter-proposals when the
+                      requested vacation length doesn't work cleanly. */}
+                  {suggestions.map((s) => (
+                    <div
+                      key={`${s.days}-${s.slot.start}`}
+                      className="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/20 bg-card p-3"
+                    >
+                      <div className="flex items-center gap-2.5 text-sm text-foreground">
+                        <Lightbulb className="h-4 w-4 shrink-0 text-primary" />
+                        <span>
+                          {s.conflicts.length === 0 ? (
+                            <>
+                              {days === 1 ? "1 day" : `${days} days`}{" "}
+                              {multiResult?.slot ? "needs time off" : "does not fit"},
+                              but{" "}
+                              <span className="font-semibold">
+                                {s.days} days works for everyone
+                              </span>
+                              : {formatDaySpan(s.slot.start, s.slot.end)}
+                              {s.leaveAfterWork &&
+                                ", leaving after work on the first day"}
+                              {s.homeBeforeWork &&
+                                ", home before work starts again"}
+                              .
+                            </>
+                          ) : (
+                            <>
+                              Closest workaround: {s.days} days,{" "}
+                              {formatDaySpan(s.slot.start, s.slot.end)}, if{" "}
+                              {nameList(s.conflicts.map((c) => c.name))}{" "}
+                              {s.conflicts.length === 1 ? "takes" : "take"} time
+                              off.
+                            </>
+                          )}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => applySuggestion(s)}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
+                      >
+                        Use these dates
+                      </button>
                     </div>
-                    <button
-                      onClick={() => applySuggestion(s)}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
-                    >
-                      Use these dates
-                    </button>
-                  </div>
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-          {/* Apple-style month calendar */}
-          <div className="mt-6">
-            <div className="relative">
-              <div className="overflow-hidden rounded-xl">
-                <AnimatePresence mode="popLayout" custom={slideDir} initial={false}>
-                  <motion.div
-                    key={viewMonth}
-                    custom={slideDir}
-                    variants={calendarSlide}
-                    initial="enter"
-                    animate="center"
-                    exit="exit"
-                    transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-                  >
-                    {monthGrid && (
-                      <CalendarPanel
-                        grid={monthGrid}
-                        bestDay={bestDay}
-                        bestSpanDays={bestSpanDays}
-                        bestTimeLabel={bestTimeLabel}
-                        todayDay={TODAY_DAY}
-                        timeZone={TZ}
-                      />
-                    )}
-                  </motion.div>
-                </AnimatePresence>
+            {/* Apple-style month calendar */}
+            <div className="mt-4">
+              <div className="relative">
+                <div className="overflow-hidden rounded-xl">
+                  <AnimatePresence mode="popLayout" custom={slideDir} initial={false}>
+                    <motion.div
+                      key={viewMonth}
+                      custom={slideDir}
+                      variants={calendarSlide}
+                      initial="enter"
+                      animate="center"
+                      exit="exit"
+                      transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+                    >
+                      {/* Cross-fade when the group changes: both calendars sit
+                          in one grid cell, so the old one fades out under the
+                          new one instead of the page collapsing to nothing. */}
+                      <div className="grid [&>*]:col-start-1 [&>*]:row-start-1">
+                        <AnimatePresence initial={false}>
+                          <motion.div
+                            key={activeGroupId ?? "none"}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0, pointerEvents: "none" }}
+                            transition={{ duration: 0.5, ease: "easeInOut" }}
+                          >
+                            {monthGrid && (
+                              <CalendarPanel
+                                grid={monthGrid}
+                                bestDay={bestDay}
+                                bestSpanDays={bestSpanDays}
+                                bestTimeLabel={bestTimeLabel}
+                                todayDay={TODAY_DAY}
+                                timeZone={TZ}
+                              />
+                            )}
+                          </motion.div>
+                        </AnimatePresence>
+                      </div>
+                    </motion.div>
+                  </AnimatePresence>
+                </div>
+
+                {/* Month nav arrows, centred on the calendar's left/right edges */}
+                <button
+                  onClick={() => pageMonth(-1)}
+                  disabled={viewMonth <= MIN_MONTH}
+                  aria-label="Previous month"
+                  className="absolute left-0 top-1/2 z-20 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border bg-card text-foreground shadow-md transition hover:bg-secondary disabled:pointer-events-none disabled:opacity-30"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+                <button
+                  onClick={() => pageMonth(1)}
+                  disabled={viewMonth >= MAX_MONTH}
+                  aria-label="Next month"
+                  className="absolute right-0 top-1/2 z-20 flex h-9 w-9 translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border bg-card text-foreground shadow-md transition hover:bg-secondary disabled:pointer-events-none disabled:opacity-30"
+                >
+                  <ChevronRight className="h-5 w-5" />
+                </button>
               </div>
 
-              {/* Month nav arrows, centred on the calendar's left/right edges */}
-              <button
-                onClick={() => pageMonth(-1)}
-                disabled={viewMonth <= MIN_MONTH}
-                aria-label="Previous month"
-                className="absolute left-0 top-1/2 z-20 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border bg-card text-foreground shadow-md transition hover:bg-secondary disabled:pointer-events-none disabled:opacity-30"
-              >
-                <ChevronLeft className="h-5 w-5" />
-              </button>
-              <button
-                onClick={() => pageMonth(1)}
-                disabled={viewMonth >= MAX_MONTH}
-                aria-label="Next month"
-                className="absolute right-0 top-1/2 z-20 flex h-9 w-9 translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border bg-card text-foreground shadow-md transition hover:bg-secondary disabled:pointer-events-none disabled:opacity-30"
-              >
-                <ChevronRight className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* Legend */}
-            <div className="mt-3 flex flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground">
-              <span>Fewer free</span>
-              {[0.2, 0.45, 0.7, 1].map((a) => (
-                <span
-                  key={a}
-                  className="h-3 w-5 rounded-sm"
-                  style={{ backgroundColor: `rgba(${ACCENT_RGB}, ${a})` }}
-                />
-              ))}
-              <span>More free</span>
-              {isMultiDay && (
-                <>
+              {/* Legend */}
+              <div className="mt-3 flex flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground">
+                <span>Fewer free</span>
+                {[0.2, 0.45, 0.7, 1].map((a) => (
                   <span
-                    className="ml-3 h-3 w-5 rounded-sm"
-                    style={{ backgroundColor: `rgba(${AMBER_RGB}, 0.5)` }}
+                    key={a}
+                    className="h-3 w-5 rounded-sm"
+                    style={{ backgroundColor: `rgba(${ACCENT_RGB}, ${a})` }}
                   />
-                  <span>free only with time off</span>
-                </>
-              )}
+                ))}
+                <span>More free</span>
+                {isMultiDay && (
+                  <>
+                    <span
+                      className="ml-3 h-3 w-5 rounded-sm"
+                      style={{ backgroundColor: `rgba(${AMBER_RGB}, 0.5)` }}
+                    />
+                    <span>free only with time off</span>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
 
-          {/* Group members */}
-          <div className="mt-6">
-            <h3 className="text-sm font-semibold text-foreground">
-              Group members
-            </h3>
-            {/* Whose times are real. Nothing while signed-in data is still
-                loading, so it doesn't flash the wrong message. */}
-            {(!user || myCalendars || myCalendarsFailed) && (
+            {/* Group members */}
+            <div className="mt-6">
+              <h3 className="text-sm font-semibold text-foreground">
+                Group members
+              </h3>
+              {/* Whose times are real. The example group is the only place
+                  generated calendars are still used, and it says so. */}
               <p className="mt-1 text-xs text-muted-foreground">
-                {!user ? (
-                  <>
-                    Everyone here is example data.{" "}
-                    <Link to="/sign-in?next=/" className="font-medium text-foreground underline underline-offset-2">
-                      Sign in
-                    </Link>{" "}
-                    to use your own calendar.
-                  </>
-                ) : myCalendarsFailed ? (
-                  <>Couldn't load your calendars, so you are shown with example data.</>
-                ) : usingRealCalendar ? (
-                  <>
-                    Your times come from your connected calendars. The others are example
-                    data until they join.
-                  </>
+                {activeGroup?.isExample ? (
+                  !user ? (
+                    <>
+                      Everyone here is example data.{" "}
+                      <Link to="/sign-in?next=/" className="font-medium text-foreground underline underline-offset-2">
+                        Sign in
+                      </Link>{" "}
+                      to use your own calendar and make a real group.
+                    </>
+                  ) : myCalendarsFailed ? (
+                    <>Couldn't load your calendars, so you are shown with example data too.</>
+                  ) : (
+                    <>
+                      The other people here are example data.{" "}
+                      <Link to="/profile" className="font-medium text-foreground underline underline-offset-2">
+                        Connect a calendar
+                      </Link>{" "}
+                      and make a group to find a date with real people.
+                    </>
+                  )
+                ) : busyFailed ? (
+                  <>Couldn't load this group's calendars, so these times are incomplete.</>
+                ) : busyLoading ? (
+                  <>Loading everyone's calendars…</>
                 ) : (
                   <>
-                    You are shown with example data.{" "}
-                    <Link to="/profile" className="font-medium text-foreground underline underline-offset-2">
-                      Connect a calendar
-                    </Link>{" "}
-                    to use your own busy times.
+                    These times come from every member's own connected calendars. Nobody sees
+                    what your events are called.
                   </>
                 )}
               </p>
-            )}
-            <div className="mt-3 flex flex-wrap gap-2">
-              {event?.participants.map((p, i) => (
-                <span
-                  key={p.profileId}
-                  className="flex items-center gap-2 rounded-full border bg-card py-1 pl-1 pr-3"
-                >
+              <div className="mt-3 flex flex-wrap gap-2">
+                {event?.participants.map((p, i) => (
                   <span
-                    className={cn(
-                      "flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold",
-                      avatarColor(i),
-                    )}
+                    key={p.profileId}
+                    className="flex items-center gap-2 rounded-full border bg-card py-1 pl-1 pr-3"
                   >
-                    {p.name.charAt(0)}
+                    <span
+                      className={cn(
+                        "flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold",
+                        avatarColor(i),
+                      )}
+                    >
+                      {p.name.charAt(0)}
+                    </span>
+                    <span className="text-sm text-foreground">{p.name}</span>
                   </span>
-                  <span className="text-sm text-foreground">{p.name}</span>
-                </span>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
+          </main>
         </div>
-      </main>
+      </div>
+
+      <NewGroupDialog
+        open={newGroupOpen}
+        submitting={createMutation.isPending}
+        error={createMutation.error ? (createMutation.error as Error).message : null}
+        onSubmit={(name) => createMutation.mutate(name)}
+        onCancel={() => setNewGroupOpen(false)}
+      />
     </div>
   );
 }

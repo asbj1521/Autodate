@@ -1,13 +1,12 @@
 /**
- * Who is using the app.
+ * Who the example groups treat as "you".
  *
- * Deliberately its own module rather than a constant on the mock data layer:
- * the profile and calendar-overview pages are backed by real Supabase data and
- * need nothing from the generator, but importing this id from there pulled
- * twenty-one generated calendars into both pages for the sake of one string.
+ * The made-up groups on the front page each keep one slot for the person
+ * looking at them, so their own real calendar can be swapped into it (see
+ * src/lib/realCalendar.ts). Without that, an example would be entirely
+ * invented and would tell you nothing about your own week.
  *
- * Real phone-number login replaces this; until then, conflict review ("you
- * have work that week" vs "waiting for Simon to approve") hinges on knowing
- * whose calendar is whose.
+ * Real groups have no need for this: there you are a real member with a real
+ * account id, and the server says which member is you.
  */
-export const CURRENT_USER_ID = "asbjorn";
+export const CURRENT_USER_ID = "you";

@@ -89,7 +89,7 @@ export default function CalendarPanel({
                     }`
                   : undefined
               }
-              className="relative min-h-[84px] border-b border-r p-1.5"
+              className="relative min-h-[80px] border-b border-r p-1.5"
               style={
                 inMonth && !cell.excluded
                   ? frac > 0
