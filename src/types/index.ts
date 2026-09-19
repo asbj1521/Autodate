@@ -12,7 +12,7 @@
  */
 
 /** Which kind of account a calendar came from. */
-export type CalendarProvider = "google" | "outlook" | "apple";
+export type CalendarProvider = "google" | "outlook" | "apple" | "ics";
 
 /**
  * A user-facing label for what a calendar is *for*. This is the "mark them after

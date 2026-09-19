@@ -42,7 +42,9 @@ import {
 import { buildMonthGrid } from "@/lib/heatmap";
 import { formatDaySpan, formatSlot, formatTripSpan } from "@/lib/format";
 import type { FriendGroup, SchedulingResult } from "@/types";
+import { avatarColor } from "@/lib/avatar";
 import { cn } from "@/lib/utils";
+import TopNav from "@/components/TopNav";
 
 /** The accent (coral/orange) as raw RGB, so heatmap cells can vary opacity. */
 const ACCENT_RGB = "249, 115, 22";
@@ -87,15 +89,6 @@ const calendarSlide = {
     filter: "blur(14px)",
   }),
 };
-
-/** Stable colours for the group-member avatars. */
-const AVATAR_COLORS = [
-  "bg-emerald-100 text-emerald-700",
-  "bg-sky-100 text-sky-700",
-  "bg-amber-100 text-amber-700",
-  "bg-violet-100 text-violet-700",
-  "bg-rose-100 text-rose-700",
-];
 
 /** Format minutes as a friendly duration label, e.g. 90 -> "1 h 30 min". */
 function formatDuration(min: number): string {
@@ -1025,16 +1018,7 @@ export default function FindDate() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* ───────── Top nav ───────── */}
-      <nav className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
-        <div className="flex items-center gap-2">
-          <span className="text-lg font-semibold tracking-tight">autodate</span>
-        </div>
-        <div className="flex items-center gap-6 text-sm text-muted-foreground">
-          <a href="#" className="transition hover:text-foreground">How it works</a>
-          <a href="#" className="transition hover:text-foreground">Sign in</a>
-        </div>
-      </nav>
+      <TopNav />
 
       {/* ───────── Hero ───────── */}
       <header className="mx-auto max-w-6xl px-6 pt-16 pb-12">
@@ -1437,7 +1421,7 @@ export default function FindDate() {
                   <span
                     className={cn(
                       "flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold",
-                      AVATAR_COLORS[i % AVATAR_COLORS.length],
+                      avatarColor(i),
                     )}
                   >
                     {p.name.charAt(0)}

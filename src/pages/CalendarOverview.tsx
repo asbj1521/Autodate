@@ -1,0 +1,592 @@
+import { Fragment, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  Info,
+  Loader2,
+  XCircle,
+} from "lucide-react";
+
+import TopNav from "@/components/TopNav";
+import { CURRENT_USER_ID } from "@/api/mockData";
+import {
+  buildMonthLayout,
+  calendarColors,
+  CATEGORY_LABELS,
+  CATEGORY_OPTIONS,
+  dayKey,
+  formatDuration,
+  formatSegmentRange,
+  HOLIDAY_CALENDAR,
+  HOLIDAY_CALENDAR_ID,
+  HOLIDAY_CATEGORY_LABEL,
+  holidaySegmentsByDay,
+  segmentByDay,
+  withHolidays,
+  type DaySegment,
+  type OverviewCalendar,
+  type OverviewData,
+} from "@/lib/calendarOverview";
+import { FUNCTION_HEADERS, SUPABASE_FUNCTIONS_URL } from "@/lib/supabaseFunctions";
+import { cn } from "@/lib/utils";
+import type { CalendarPurpose } from "@/types";
+
+const PROVIDER_LABELS: Record<OverviewCalendar["provider"], string> = {
+  builtin: "Built in",
+  google: "Google",
+  outlook: "Outlook",
+  apple: "Apple",
+  ics: "Calendar link",
+};
+
+/** "Tue Sep 22 2026, 2 busy blocks" plus any holiday names, for screen readers and tests. */
+function cellLabel(date: Date, segments: DaySegment[]): string {
+  const busy = segments.filter((s) => !s.holiday).length;
+  const holidays = segments.flatMap((s) => (s.holiday ? [s.holiday.name] : []));
+  return (
+    `${date.toDateString()}, ${busy} busy ${busy === 1 ? "block" : "blocks"}` +
+    (holidays.length > 0 ? `, ${holidays.join(", ")}` : "")
+  );
+}
+
+/** A narrow week-number column, then seven equal day columns. */
+const GRID_COLUMNS = "grid grid-cols-[2.75rem_repeat(7,minmax(0,1fr))]";
+
+/** Rows shown inside a day cell before collapsing the rest into "+N more". */
+const MAX_ROWS_PER_CELL = 3;
+
+async function fetchOverview(from: Date, to: Date): Promise<OverviewData> {
+  const params = new URLSearchParams({
+    profileId: CURRENT_USER_ID,
+    from: from.toISOString(),
+    to: to.toISOString(),
+  });
+  const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/calendar-busy?${params}`, {
+    headers: FUNCTION_HEADERS,
+  });
+  if (!res.ok) throw new Error(`Couldn't load your calendars (HTTP ${res.status})`);
+  return res.json();
+}
+
+/**
+ * The user's own collected calendar data, laid out in the same month-grid
+ * style as the scheduling page.
+ *
+ * What's shown is exactly what Autodate stores: busy time ranges plus the
+ * calendar (and account) each came from, coloured by the category the user
+ * gave that calendar. There are no event titles: providers are only ever asked
+ * for times, by design (see the privacy notes in the calendar_integrations
+ * migration). Overlapping and back-to-back events are already merged into one
+ * busy block, so a run of consecutive lectures appears as a single block.
+ */
+export default function CalendarOverview() {
+  const queryClient = useQueryClient();
+  const [month, setMonth] = useState(() => {
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() };
+  });
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+
+  const layout = useMemo(() => buildMonthLayout(month.year, month.month), [month]);
+  const gridDays = useMemo(() => layout.weeks.flat(), [layout]);
+
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
+    queryKey: ["calendar-busy", CURRENT_USER_ID, dayKey(layout.from)],
+    queryFn: () => fetchOverview(layout.from, layout.to),
+    placeholderData: keepPreviousData, // no flash of emptiness when changing month
+  });
+
+  const setPurpose = useMutation({
+    mutationFn: async (v: { calendarId: string; purpose: CalendarPurpose | null }) => {
+      const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/calendar-set-purpose`, {
+        method: "POST",
+        headers: { ...FUNCTION_HEADERS, "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId: CURRENT_USER_ID, ...v }),
+      });
+      if (!res.ok) throw new Error(`Couldn't save the category (HTTP ${res.status})`);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["calendar-busy"] });
+      void queryClient.invalidateQueries({ queryKey: ["calendar-status"] });
+    },
+  });
+
+  const calendars = useMemo(() => data?.calendars ?? [], [data]);
+  // The built-in holiday calendar is always present, ahead of the connected ones.
+  const allCalendars = useMemo(() => [HOLIDAY_CALENDAR, ...calendars], [calendars]);
+  const calendarById = useMemo(() => new Map(allCalendars.map((c) => [c.id, c])), [allCalendars]);
+  const colors = useMemo(() => calendarColors(calendars), [calendars]);
+  const holidaysByDay = useMemo(() => holidaySegmentsByDay(layout.from, layout.to), [layout]);
+  const blockCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const b of data?.blocks ?? []) counts.set(b.calendarId, (counts.get(b.calendarId) ?? 0) + 1);
+    counts.set(
+      HOLIDAY_CALENDAR_ID,
+      [...holidaysByDay.values()].reduce((sum, list) => sum + list.length, 0),
+    );
+    return counts;
+  }, [data, holidaysByDay]);
+  const segmentsByDay = useMemo(
+    () =>
+      withHolidays(
+        segmentByDay(
+          (data?.blocks ?? []).filter((b) => !hidden.has(b.calendarId)),
+          layout.from,
+          layout.to,
+        ),
+        hidden.has(HOLIDAY_CALENDAR_ID) ? new Map() : holidaysByDay,
+      ),
+    [data, hidden, layout, holidaysByDay],
+  );
+
+  const todayKey = dayKey(new Date());
+  const inMonthKeys = gridDays.filter((d) => d.inMonth).map((d) => d.key);
+  const selected =
+    selectedKey && gridDays.some((d) => d.key === selectedKey)
+      ? selectedKey
+      : inMonthKeys.includes(todayKey)
+        ? todayKey
+        : inMonthKeys[0];
+  const selectedDay = gridDays.find((d) => d.key === selected);
+  const selectedSegments = segmentsByDay.get(selected) ?? [];
+
+  const shiftMonth = (delta: number) => {
+    setSelectedKey(null);
+    setMonth(({ year, month: m }) => {
+      const d = new Date(year, m + delta, 1);
+      return { year: d.getFullYear(), month: d.getMonth() };
+    });
+  };
+  const goToday = () => {
+    const now = new Date();
+    setSelectedKey(dayKey(now));
+    setMonth({ year: now.getFullYear(), month: now.getMonth() });
+  };
+  const toggleHidden = (id: string) =>
+    setHidden((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const noConnectedCalendars = !isLoading && !error && calendars.length === 0;
+
+  return (
+    <div className="min-h-screen bg-background">
+      <TopNav />
+
+      <main className="mx-auto max-w-6xl px-6 pb-20 pt-4">
+        <Link
+          to="/profile"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground transition hover:text-foreground"
+        >
+          <ChevronLeft className="h-4 w-4" />
+          Back to profile
+        </Link>
+
+        <h1 className="mt-4 text-2xl font-bold text-foreground">Calendar overview</h1>
+        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+          Everything Autodate has collected from your connected calendars. Only busy times are
+          stored, never event titles, so each block shows when you are busy and which calendar it
+          came from. Back-to-back events appear as one block. Danish public holidays are built
+          in. Times are in your local time ({timeZone}).
+        </p>
+
+        {error && (
+          <div className="mt-6 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+            <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span className="flex-1">
+              {error instanceof Error ? error.message : "Something went wrong."}
+            </span>
+            <button
+              onClick={() => void refetch()}
+              className="font-medium underline underline-offset-2"
+            >
+              Try again
+            </button>
+          </div>
+        )}
+
+        {data?.truncated && (
+          <div className="mt-6 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <Info className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>This month has more busy blocks than can be shown, so some are missing.</span>
+          </div>
+        )}
+
+        {noConnectedCalendars && (
+          <div className="mt-6 flex items-start gap-2 rounded-lg border bg-secondary/40 p-3 text-sm text-muted-foreground">
+            <Info className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              No calendars connected yet.{" "}
+              <Link
+                to="/profile"
+                className="font-medium text-foreground underline underline-offset-2"
+              >
+                Connect one on your profile
+              </Link>{" "}
+              to see your own busy times here. Danish holidays are already shown.
+            </span>
+          </div>
+        )}
+
+          <div className="mt-6">
+            {/* Month grid, full width so calendar names fit inside the day cells */}
+            <div>
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="flex items-center gap-2 text-lg font-semibold capitalize text-foreground">
+                  {layout.label}
+                  {(isLoading || isFetching) && (
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  )}
+                </h2>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={goToday}
+                    className="rounded-full border bg-background px-3 py-1.5 text-sm font-medium text-foreground transition hover:bg-secondary"
+                  >
+                    Today
+                  </button>
+                  <button
+                    onClick={() => shiftMonth(-1)}
+                    aria-label="Previous month"
+                    className="flex h-8 w-8 items-center justify-center rounded-full border bg-background text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => shiftMonth(1)}
+                    aria-label="Next month"
+                    className="flex h-8 w-8 items-center justify-center rounded-full border bg-background text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="overflow-hidden rounded-xl border bg-card">
+                <div className={cn(GRID_COLUMNS, "border-b bg-secondary/40")}>
+                  <div
+                    className="px-1 py-2 text-center text-xs font-medium text-muted-foreground"
+                    title="Week number"
+                  >
+                    uge
+                  </div>
+                  {layout.weekdayLabels.map((label) => (
+                    <div key={label} className="px-2 py-2 text-xs font-medium text-muted-foreground">
+                      {label}
+                    </div>
+                  ))}
+                </div>
+
+                <div className={GRID_COLUMNS}>
+                  {gridDays.map((cell, index) => {
+                    const isToday = cell.key === todayKey;
+                    const isPast = cell.inMonth && cell.key < todayKey;
+                    const isSelected = cell.key === selected;
+                    const segments = segmentsByDay.get(cell.key) ?? [];
+                    const shown = segments.slice(0, MAX_ROWS_PER_CELL);
+                    const extra = segments.length - shown.length;
+                    // The 1st of a month is labelled with its abbreviation, e.g. "1. okt.".
+                    const numberLabel =
+                      cell.dayOfMonth === 1
+                        ? `1. ${cell.date.toLocaleString("da-DK", { month: "short" })}`
+                        : cell.dayOfMonth;
+
+                    // Each row starts with its ISO week number, on the left of Monday.
+                    const rowIndex = Math.floor(index / 7);
+                    const isCurrentWeek = layout.weeks[rowIndex].some((d) => d.key === todayKey);
+
+                    return (
+                      <Fragment key={cell.key}>
+                      {index % 7 === 0 && (
+                        <div
+                          title={`Week ${layout.weekNumbers[rowIndex]}`}
+                          className={cn(
+                            "flex items-start justify-center border-b border-r bg-secondary/40 pt-2.5 text-xs text-muted-foreground",
+                            isCurrentWeek && "font-semibold text-foreground",
+                          )}
+                        >
+                          {layout.weekNumbers[rowIndex]}
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedKey(cell.key)}
+                        aria-label={cellLabel(cell.date, segments)}
+                        aria-pressed={isSelected}
+                        className={cn(
+                          "relative flex min-h-[104px] flex-col border-b border-r p-1.5 text-left transition hover:bg-secondary/40",
+                          isSelected && "ring-2 ring-inset ring-primary/60",
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "inline-flex h-6 min-w-6 items-center justify-center self-start rounded-full px-1 text-xs",
+                            !cell.inMonth && "text-muted-foreground/40",
+                            cell.inMonth && isPast && "text-muted-foreground",
+                            cell.inMonth && !isPast && !isToday && "text-foreground",
+                            isToday && "bg-primary font-semibold text-primary-foreground",
+                          )}
+                        >
+                          {numberLabel}
+                        </span>
+
+                        <div className="mt-1 flex flex-col gap-0.5">
+                          {shown.map((seg, i) => {
+                            const rgb = colors.get(seg.calendarId) ?? "113, 113, 122";
+                            const cal = calendarById.get(seg.calendarId);
+                            return (
+                              <div
+                                key={i}
+                                className="flex items-center gap-1 rounded-[4px] px-1 py-0.5 text-[10px] leading-tight"
+                                style={{ backgroundColor: `rgba(${rgb}, 0.16)` }}
+                              >
+                                <span
+                                  className="h-3 w-[3px] shrink-0 rounded-full"
+                                  style={{ backgroundColor: `rgb(${rgb})` }}
+                                />
+                                <span className="truncate text-foreground/80">
+                                  {seg.holiday ? (
+                                    <span className="font-medium">{seg.holiday.name}</span>
+                                  ) : (
+                                    <>
+                                      <span className="font-medium">{formatSegmentRange(seg)}</span>{" "}
+                                      {cal?.name}
+                                    </>
+                                  )}
+                                </span>
+                              </div>
+                            );
+                          })}
+                          {extra > 0 && (
+                            <span className="px-1 text-[10px] text-muted-foreground">
+                              +{extra} more
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Past days keep their colour under a grey veil, like the front page. */}
+                        {isPast && (
+                          <div className="pointer-events-none absolute inset-0 bg-zinc-400/35" />
+                        )}
+                      </button>
+                      </Fragment>
+                    );
+                  })}
+                </div>
+              </div>
+
+            </div>
+
+            {/* Selected day + calendars, side by side under the grid */}
+            <div className="mt-6 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+              <section className="rounded-2xl border bg-card p-5 shadow-sm">
+                <h3 className="font-semibold text-foreground">
+                  {selectedDay?.date.toLocaleDateString("en-GB", {
+                    weekday: "long",
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </h3>
+                {selectedSegments.length === 0 ? (
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Nothing busy on this day in the calendars shown.
+                  </p>
+                ) : (
+                  <ul className="mt-3 divide-y">
+                    {selectedSegments.map((seg, i) => (
+                      <DayRow
+                        key={i}
+                        seg={seg}
+                        calendar={calendarById.get(seg.calendarId)}
+                        rgb={colors.get(seg.calendarId) ?? "113, 113, 122"}
+                      />
+                    ))}
+                  </ul>
+                )}
+              </section>
+
+              {/* Calendars: colour key, category, show/hide */}
+              <aside className="rounded-2xl border bg-card p-5 shadow-sm">
+                <h2 className="font-semibold text-foreground">Your calendars</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Give each calendar a category. Every busy block takes its calendar's category and
+                  colour.
+                </p>
+                <ul className="mt-3 divide-y">
+                  {allCalendars.map((c) => {
+                    const isBuiltIn = c.provider === "builtin";
+                    const isHidden = hidden.has(c.id);
+                    const saving = setPurpose.isPending && setPurpose.variables?.calendarId === c.id;
+                    return (
+                      <li key={c.id} className="flex flex-col gap-2 py-3">
+                        <div className="flex items-start gap-2">
+                          <span
+                            className={cn("mt-1 h-3 w-3 shrink-0 rounded-full", isHidden && "opacity-30")}
+                            style={{ backgroundColor: `rgb(${colors.get(c.id)})` }}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p
+                              className={cn(
+                                "truncate text-sm font-medium text-foreground",
+                                isHidden && "text-muted-foreground line-through",
+                              )}
+                            >
+                              {c.name}
+                            </p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {isBuiltIn
+                                ? "Built in, no account needed"
+                                : `${c.account ? `${c.account} · ` : ""}${PROVIDER_LABELS[c.provider]}`}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => toggleHidden(c.id)}
+                            aria-pressed={!isHidden}
+                            title={isHidden ? "Show on the calendar" : "Hide from the calendar"}
+                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border bg-background text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                          >
+                            {isHidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-2 pl-5">
+                          {isBuiltIn ? (
+                            // Holidays are always categorised as such; there is nothing to pick.
+                            <span
+                              className="rounded-full px-2 py-0.5 text-xs"
+                              style={{
+                                backgroundColor: `rgba(${colors.get(c.id)}, 0.16)`,
+                                color: `rgb(${colors.get(c.id)})`,
+                              }}
+                            >
+                              {HOLIDAY_CATEGORY_LABEL}
+                            </span>
+                          ) : (
+                            <select
+                              value={c.purpose ?? ""}
+                              disabled={saving}
+                              onChange={(e) =>
+                                setPurpose.mutate({
+                                  calendarId: c.id,
+                                  purpose: (e.target.value || null) as CalendarPurpose | null,
+                                })
+                              }
+                              aria-label={`Category for ${c.name}`}
+                              className="rounded-lg border bg-background px-2 py-1 text-xs text-foreground outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-60"
+                            >
+                              <option value="">No category</option>
+                              {CATEGORY_OPTIONS.map((o) => (
+                                <option key={o.value} value={o.value}>
+                                  {o.label}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                          {saving && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                          <span className="text-xs text-muted-foreground">
+                            {blockCounts.get(c.id) ?? 0} in this view
+                          </span>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+                {setPurpose.isError && (
+                  <p className="mt-2 text-xs text-red-700">
+                    {setPurpose.error instanceof Error ? setPurpose.error.message : "Couldn't save."}
+                  </p>
+                )}
+              </aside>
+            </div>
+          </div>
+      </main>
+    </div>
+  );
+}
+
+/** One busy block in the selected day's list, with everything we know about it. */
+function DayRow({
+  seg,
+  calendar,
+  rgb,
+}: {
+  seg: DaySegment;
+  calendar: OverviewCalendar | undefined;
+  rgb: string;
+}) {
+  if (seg.holiday) {
+    return (
+      <li className="flex items-start gap-3 py-3 text-sm">
+        <span
+          className="mt-0.5 h-8 w-1 shrink-0 rounded-full"
+          style={{ backgroundColor: `rgb(${rgb})` }}
+        />
+        <div className="min-w-0 flex-1">
+          <p className="font-medium text-foreground">
+            {seg.holiday.name}
+            <span className="ml-2 font-normal text-muted-foreground">{seg.holiday.englishName}</span>
+          </p>
+          <p className="text-muted-foreground">
+            {seg.holiday.kind === "public" ? "Public holiday" : "Commonly observed day off"} · Denmark
+          </p>
+        </div>
+        <span
+          className="shrink-0 rounded-full px-2 py-0.5 text-xs"
+          style={{ backgroundColor: `rgba(${rgb}, 0.16)`, color: `rgb(${rgb})` }}
+        >
+          {HOLIDAY_CATEGORY_LABEL}
+        </span>
+      </li>
+    );
+  }
+  return (
+    <li className="flex items-start gap-3 py-3 text-sm">
+      <span
+        className="mt-0.5 h-8 w-1 shrink-0 rounded-full"
+        style={{ backgroundColor: `rgb(${rgb})` }}
+      />
+      <div className="min-w-0 flex-1">
+        <p className="font-medium text-foreground">
+          {formatSegmentRange(seg)}
+          <span className="ml-2 font-normal text-muted-foreground">
+            {seg.allDay ? "" : formatDuration(seg.start, seg.end)}
+          </span>
+        </p>
+        <p className="text-muted-foreground">
+          {calendar?.name ?? "Calendar"}
+          {calendar?.account ? ` · ${calendar.account}` : ""}
+          {calendar ? ` · ${PROVIDER_LABELS[calendar.provider]}` : ""}
+        </p>
+        {(seg.continuesBefore || seg.continuesAfter) && (
+          <p className="text-xs text-muted-foreground">
+            {seg.continuesBefore && seg.continuesAfter
+              ? "Continues from the previous day and into the next"
+              : seg.continuesBefore
+                ? "Continues from the previous day"
+                : "Continues into the next day"}
+          </p>
+        )}
+      </div>
+      <span
+        className="shrink-0 rounded-full px-2 py-0.5 text-xs"
+        style={{ backgroundColor: `rgba(${rgb}, 0.16)`, color: `rgb(${rgb})` }}
+      >
+        {calendar?.purpose ? CATEGORY_LABELS[calendar.purpose] : "No category"}
+      </span>
+    </li>
+  );
+}
