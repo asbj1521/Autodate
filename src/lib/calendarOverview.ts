@@ -346,3 +346,60 @@ export function calendarColors(calendars: OverviewCalendar[]): Map<string, strin
   }
   return colors;
 }
+
+// ---------------------------------------------------------------------------
+// Calendar list grouping
+// ---------------------------------------------------------------------------
+
+/** The brands the calendar list is grouped by, in the order they are shown. */
+const BRANDS: { provider: OverviewCalendar["provider"]; label: string }[] = [
+  { provider: "google", label: "Google" },
+  { provider: "outlook", label: "Outlook" },
+  { provider: "apple", label: "Apple" },
+  // Calendars added by link (a timetable, a shared feed): no brand of their own.
+  { provider: "ics", label: "Special" },
+  { provider: "builtin", label: "Built in" },
+];
+
+export interface CalendarGroup {
+  /** The provider this group holds, which is also its stable key. */
+  id: OverviewCalendar["provider"];
+  label: string;
+  calendars: OverviewCalendar[];
+}
+
+/**
+ * Split calendars into one group per brand, in a fixed order. Brands with no
+ * calendars are left out, and calendars keep the order they came in within
+ * their group. A provider this list doesn't know about (a new integration)
+ * gets a group of its own at the end instead of silently vanishing.
+ */
+export function groupCalendarsByBrand(calendars: OverviewCalendar[]): CalendarGroup[] {
+  const known = new Set(BRANDS.map((b) => b.provider));
+  const groups: CalendarGroup[] = BRANDS.map((b) => ({
+    id: b.provider,
+    label: b.label,
+    calendars: calendars.filter((c) => c.provider === b.provider),
+  }));
+  for (const c of calendars) {
+    if (known.has(c.provider)) continue;
+    const label = String(c.provider);
+    const existing = groups.find((g) => g.id === c.provider);
+    if (existing) existing.calendars.push(c);
+    else groups.push({ id: c.provider, label, calendars: [c] });
+  }
+  return groups.filter((g) => g.calendars.length > 0);
+}
+
+/**
+ * What a group's checkbox should show: every calendar visible ("all"), none
+ * of them ("none"), or a mix ("some", the indeterminate dash).
+ */
+export function groupVisibility(
+  group: CalendarGroup,
+  hidden: ReadonlySet<string>,
+): "all" | "none" | "some" {
+  const hiddenCount = group.calendars.filter((c) => hidden.has(c.id)).length;
+  if (hiddenCount === 0) return "all";
+  return hiddenCount === group.calendars.length ? "none" : "some";
+}

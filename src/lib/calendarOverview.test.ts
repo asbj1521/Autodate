@@ -3,6 +3,8 @@ import {
   buildMonthLayout,
   calendarColors,
   dayKey,
+  groupCalendarsByBrand,
+  groupVisibility,
   isoWeekNumber,
   formatDuration,
   formatSegmentRange,
@@ -303,5 +305,85 @@ describe("month layout week numbers", () => {
   it("handles a six-row month", () => {
     const layout = buildMonthLayout(2026, 7); // August 2026 needs six rows
     expect(layout.weekNumbers).toEqual([31, 32, 33, 34, 35, 36]);
+  });
+});
+
+describe("groupCalendarsByBrand", () => {
+  const cal = (id: string, provider: OverviewCalendar["provider"]): OverviewCalendar => ({
+    id,
+    name: id,
+    purpose: null,
+    provider,
+    account: null,
+    connectionId: `conn-${provider}`,
+  });
+
+  it("groups by brand in a fixed order, whatever order the calendars arrive in", () => {
+    const groups = groupCalendarsByBrand([
+      HOLIDAY_CALENDAR,
+      cal("a1", "apple"),
+      cal("g1", "google"),
+      cal("l1", "ics"),
+      cal("o1", "outlook"),
+      cal("g2", "google"),
+    ]);
+    expect(groups.map((g) => g.label)).toEqual(["Google", "Outlook", "Apple", "Special", "Built in"]);
+    expect(groups[0].calendars.map((c) => c.id)).toEqual(["g1", "g2"]);
+  });
+
+  it("calls calendars added by link 'Special'", () => {
+    const groups = groupCalendarsByBrand([cal("l1", "ics")]);
+    expect(groups).toEqual([{ id: "ics", label: "Special", calendars: [expect.objectContaining({ id: "l1" })] }]);
+  });
+
+  it("leaves out brands with no calendars", () => {
+    const groups = groupCalendarsByBrand([cal("a1", "apple")]);
+    expect(groups.map((g) => g.id)).toEqual(["apple"]);
+    expect(groupCalendarsByBrand([])).toEqual([]);
+  });
+
+  it("keeps a calendar from a provider it doesn't know about, in a group at the end", () => {
+    const groups = groupCalendarsByBrand([
+      cal("g1", "google"),
+      cal("x1", "yahoo" as OverviewCalendar["provider"]),
+      cal("x2", "yahoo" as OverviewCalendar["provider"]),
+    ]);
+    expect(groups.map((g) => g.id)).toEqual(["google", "yahoo"]);
+    expect(groups[1].calendars.map((c) => c.id)).toEqual(["x1", "x2"]);
+  });
+
+  it("puts every calendar in exactly one group", () => {
+    const all = [cal("g1", "google"), cal("g2", "google"), cal("a1", "apple"), HOLIDAY_CALENDAR];
+    const grouped = groupCalendarsByBrand(all).flatMap((g) => g.calendars.map((c) => c.id));
+    expect(grouped.sort()).toEqual(all.map((c) => c.id).sort());
+  });
+});
+
+describe("groupVisibility", () => {
+  const group = {
+    id: "google" as const,
+    label: "Google",
+    calendars: ["a", "b", "c"].map((id) => ({
+      id,
+      name: id,
+      purpose: null,
+      provider: "google" as const,
+      account: null,
+      connectionId: "conn",
+    })),
+  };
+
+  it("is 'all' when nothing in the group is hidden", () => {
+    expect(groupVisibility(group, new Set())).toBe("all");
+    expect(groupVisibility(group, new Set(["some-other-calendar"]))).toBe("all");
+  });
+
+  it("is 'none' when everything in the group is hidden", () => {
+    expect(groupVisibility(group, new Set(["a", "b", "c"]))).toBe("none");
+  });
+
+  it("is 'some' for a mix", () => {
+    expect(groupVisibility(group, new Set(["b"]))).toBe("some");
+    expect(groupVisibility(group, new Set(["a", "c"]))).toBe("some");
   });
 });

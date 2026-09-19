@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
  * inside the scheduling page; pulled out once a second page (Profile) needed
  * the same bar so the two don't drift apart.
  */
-export default function TopNav() {
+export default function TopNav({ wide = false }: { wide?: boolean }) {
   const { pathname } = useLocation();
   const queryClient = useQueryClient();
   const onProfile = pathname === "/profile";
@@ -32,7 +32,13 @@ export default function TopNav() {
   };
 
   return (
-    <nav className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
+    <nav
+      className={cn(
+        "mx-auto flex items-center justify-between px-6 py-5",
+        // `wide` pages use the full screen; keep the bar's edges in step with theirs.
+        wide ? "lg:px-10" : "max-w-6xl",
+      )}
+    >
       <Link to="/" className="flex items-center gap-2">
         <span className="text-lg font-semibold tracking-tight">autodate</span>
       </Link>
