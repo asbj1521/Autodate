@@ -30,7 +30,10 @@ interface SourceRow {
   };
 }
 
-const MAX_RANGE_DAYS = 100; // a month grid needs at most 42
+// A month grid needs 42 days; the scheduling page asks for its whole search
+// window, twelve months from the 1st of this one. MAX_PAGES still bounds the
+// response however busy the year is.
+const MAX_RANGE_DAYS = 400;
 const PAGE_SIZE = 1000; // PostgREST's default row cap per request
 const MAX_PAGES = 10; // stop at 10k blocks rather than build an unbounded response
 

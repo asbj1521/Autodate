@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertTriangle,
@@ -34,7 +35,11 @@ import {
   type VacationSuggestion,
   type WeeklySpanShape,
 } from "@/lib/availability";
+import type { OverviewData } from "@/lib/calendarOverview";
 import { buildMonthGrid } from "@/lib/heatmap";
+import { busyFromCalendars, withRealCalendar } from "@/lib/realCalendar";
+import { callFunction } from "@/lib/supabaseFunctions";
+import { displayName, useAuth } from "@/context/auth";
 import { formatDaySpan, formatSlot, formatTime, formatTripSpan } from "@/lib/format";
 import type { SchedulingResult } from "@/types";
 import { avatarColor } from "@/lib/avatar";
@@ -197,10 +202,42 @@ export default function FindDate() {
   // Don't leave the "Copied!" timer running after the page goes away.
   useEffect(() => () => clearTimeout(copiedTimer.current), []);
 
-  const { data: groups } = useQuery({
+  const { data: mockGroups } = useQuery({
     queryKey: ["mock-groups"],
     queryFn: getMockGroups,
   });
+
+  // The signed-in person's real busy time across the whole search window.
+  // Keyed under "calendar-busy" so changing a calendar's category on the
+  // overview page refreshes this too.
+  const { user } = useAuth();
+  const { data: myCalendars, isError: myCalendarsFailed } = useQuery({
+    queryKey: ["calendar-busy", user?.id, "search-window"],
+    queryFn: () =>
+      callFunction<OverviewData>("calendar-busy", {
+        params: { from: SEARCH_WINDOW.start, to: SEARCH_WINDOW.end },
+        errorMessage: "Couldn't load your calendars",
+      }),
+    enabled: !!user,
+    staleTime: 60_000,
+  });
+
+  // Real data replaces your generated calendar only once there is some: with
+  // nothing connected you would read as free all year, which is less honest
+  // than the example. Everyone else stays generated until they have accounts.
+  const usingRealCalendar = !!user && (myCalendars?.calendars.length ?? 0) > 0;
+  const groups = useMemo(
+    () =>
+      mockGroups && usingRealCalendar
+        ? withRealCalendar(
+            mockGroups,
+            CURRENT_USER_ID,
+            displayName(user),
+            busyFromCalendars(myCalendars),
+          )
+        : mockGroups,
+    [mockGroups, usingRealCalendar, user, myCalendars],
+  );
 
   // Default to the first group once loaded; otherwise honour the user's choice.
   const activeGroupId = selectedGroupId ?? groups?.[0]?.id ?? null;
@@ -496,7 +533,8 @@ export default function FindDate() {
   const selfAccepted =
     multiResult?.slot != null && acceptedSlot === multiResult.slot.start;
   const needsSelfApproval = selfConflict !== null && !selfAccepted;
-  // Unique titles of your own conflicting commitments, e.g. "Arbejde".
+  // Unique titles of your own conflicting commitments: a generated title like
+  // "Arbejde", or with real data the name of the calendar, e.g. "Work".
   const selfConflictTitles = selfConflict
     ? [...new Set(selfConflict.events.map((e) => e.title ?? "a commitment"))]
         .slice(0, 3)
@@ -900,6 +938,36 @@ export default function FindDate() {
             <h3 className="text-sm font-semibold text-foreground">
               Group members
             </h3>
+            {/* Whose times are real. Nothing while signed-in data is still
+                loading, so it doesn't flash the wrong message. */}
+            {(!user || myCalendars || myCalendarsFailed) && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {!user ? (
+                  <>
+                    Everyone here is example data.{" "}
+                    <Link to="/sign-in?next=/" className="font-medium text-foreground underline underline-offset-2">
+                      Sign in
+                    </Link>{" "}
+                    to use your own calendar.
+                  </>
+                ) : myCalendarsFailed ? (
+                  <>Couldn't load your calendars, so you are shown with example data.</>
+                ) : usingRealCalendar ? (
+                  <>
+                    Your times come from your connected calendars. The others are example
+                    data until they join.
+                  </>
+                ) : (
+                  <>
+                    You are shown with example data.{" "}
+                    <Link to="/profile" className="font-medium text-foreground underline underline-offset-2">
+                      Connect a calendar
+                    </Link>{" "}
+                    to use your own busy times.
+                  </>
+                )}
+              </p>
+            )}
             <div className="mt-3 flex flex-wrap gap-2">
               {event?.participants.map((p, i) => (
                 <span
