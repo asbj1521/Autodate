@@ -34,11 +34,6 @@ export function formatSlot(start: string, end: string): string {
   return `${formatDate(start)} · ${formatTime(start)}–${formatTime(end)} (UTC)`;
 }
 
-/** "09:00–18:00" for a busy block on a single day. */
-export function formatTimeRange(start: string, end: string): string {
-  return `${formatTime(start)}–${formatTime(end)}`;
-}
-
 /**
  * "Mon 5 Oct to Sun 11 Oct" for a whole-day span. `end` is the exclusive
  * midnight after the span, so the displayed last day is one day earlier.

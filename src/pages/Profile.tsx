@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
@@ -9,60 +9,23 @@ import {
   ChevronLeft,
   Info,
   Loader2,
-  Lock,
   RefreshCw,
   Trash2,
   XCircle,
 } from "lucide-react";
 
+import AppleCredentialsForm from "@/components/AppleCredentialsForm";
+import IcsLinkForm from "@/components/IcsLinkForm";
 import TopNav from "@/components/TopNav";
 import { avatarColor } from "@/lib/avatar";
-import { CURRENT_USER_ID } from "@/api/mockData";
-import { FUNCTION_HEADERS, SUPABASE_FUNCTIONS_URL } from "@/lib/supabaseFunctions";
+import { CURRENT_USER_ID } from "@/api/currentUser";
+import {
+  calendarStatusQuery,
+  type CalendarConnectionStatus,
+} from "@/api/calendarStatus";
+import { callFunction, SUPABASE_FUNCTIONS_URL } from "@/lib/supabaseFunctions";
 import { cn } from "@/lib/utils";
 import type { CalendarProvider } from "@/types";
-
-/** One calendar discovered within a connected account (see calendar_sources). */
-interface CalendarSourceStatus {
-  id: string;
-  display_name: string | null;
-  purpose: "work" | "school" | "personal" | "other" | null;
-}
-
-/** A linked account's real, persisted state: what calendar-status returns. */
-interface CalendarConnectionStatus {
-  id: string;
-  provider: CalendarProvider;
-  status: "pending" | "connected" | "error";
-  account_label: string | null;
-  error_message: string | null;
-  created_at: string;
-  last_synced_at: string | null;
-  calendar_sources: CalendarSourceStatus[];
-  busyCount: number;
-}
-
-/**
- * The persistent "is this actually connected" check. Runs on every page
- * load (not just right after an OAuth redirect), backed by the database via
- * the calendar-status Edge Function, so refreshing the page or coming back
- * tomorrow shows the same real state instead of a banner that only ever
- * appears once.
- */
-function useCalendarStatus() {
-  return useQuery({
-    queryKey: ["calendar-status", CURRENT_USER_ID],
-    queryFn: async (): Promise<CalendarConnectionStatus[]> => {
-      const res = await fetch(
-        `${SUPABASE_FUNCTIONS_URL}/calendar-status?profileId=${encodeURIComponent(CURRENT_USER_ID)}`,
-        { headers: FUNCTION_HEADERS },
-      );
-      if (!res.ok) throw new Error(`calendar-status failed: ${res.status}`);
-      const body = await res.json();
-      return body.connections ?? [];
-    },
-  });
-}
 
 /**
  * Every connection attempt for a provider, newest first (calendar-status
@@ -142,19 +105,21 @@ const PROVIDERS: ProviderMeta[] = [
 export default function Profile() {
   const [notice, setNotice] = useState<CalendarProvider | null>(null);
   const [appleFormOpen, setAppleFormOpen] = useState(false);
-  const [appleEmail, setAppleEmail] = useState("");
-  const [applePassword, setApplePassword] = useState("");
   const [icsFormOpen, setIcsFormOpen] = useState(false);
-  const [icsUrl, setIcsUrl] = useState("");
-  const [icsName, setIcsName] = useState("");
   const [icsSubmitting, setIcsSubmitting] = useState(false);
+  // Bumped after each successful add, to remount the form with empty fields.
+  const [icsAddedCount, setIcsAddedCount] = useState(0);
   const [icsError, setIcsError] = useState<string | null>(null);
   const [icsResult, setIcsResult] = useState<string | null>(null);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<{ id: string; message: string } | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
-  const { data: connections, refetch: refetchStatus } = useCalendarStatus();
+  const {
+    data: connections,
+    isPending: statusPending,
+    refetch: refetchStatus,
+  } = useQuery(calendarStatusQuery());
 
   // The OAuth callbacks redirect back here with ?connected=<provider> or
   // ?error=<provider>:<reason>. Read it once, show a banner, then strip the
@@ -185,33 +150,27 @@ export default function Profile() {
       setIcsError(null);
       return;
     }
-    if (provider === "apple") {
-      setAppleFormOpen(true);
-      setNotice(null);
-      return;
-    }
-    setNotice(provider);
+    setAppleFormOpen(true);
+    setNotice(null);
   };
 
-  const handleIcsSubmit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const handleIcsSubmit = async (url: string, name: string) => {
     setIcsSubmitting(true);
     setIcsError(null);
     setIcsResult(null);
     try {
-      const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/calendar-add-ics`, {
-        method: "POST",
-        headers: { ...FUNCTION_HEADERS, "Content-Type": "application/json" },
-        body: JSON.stringify({ profileId: CURRENT_USER_ID, url: icsUrl, name: icsName }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? `Couldn't add the link (HTTP ${res.status})`);
+      const body = await callFunction<{ label: string; busyBlocks: number }>(
+        "calendar-add-ics",
+        {
+          body: { profileId: CURRENT_USER_ID, url, name },
+          errorMessage: "Couldn't add the link",
+        },
+      );
       setIcsResult(
         `Added "${body.label}" with ${body.busyBlocks} busy ${body.busyBlocks === 1 ? "block" : "blocks"}.`,
       );
       setIcsFormOpen(false);
-      setIcsUrl("");
-      setIcsName("");
+      setIcsAddedCount((n) => n + 1);
       await refetchStatus();
     } catch (err) {
       setIcsError(err instanceof Error ? err.message : "Couldn't add the link");
@@ -224,12 +183,10 @@ export default function Profile() {
     setRemovingId(connectionId);
     setRemoveError(null);
     try {
-      const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/calendar-disconnect`, {
-        method: "POST",
-        headers: { ...FUNCTION_HEADERS, "Content-Type": "application/json" },
-        body: JSON.stringify({ profileId: CURRENT_USER_ID, connectionId }),
+      await callFunction("calendar-disconnect", {
+        body: { profileId: CURRENT_USER_ID, connectionId },
+        errorMessage: "Couldn't remove the account",
       });
-      if (!res.ok) throw new Error(`Couldn't remove the account (HTTP ${res.status})`);
       setConfirmRemoveId(null);
       await refetchStatus();
     } catch (err) {
@@ -243,10 +200,8 @@ export default function Profile() {
     }
   };
 
-  const handleAppleSubmit = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setNotice("apple");
-  };
+  // Apple has no backend yet, so say so rather than pretend an account linked.
+  const handleAppleSubmit = () => setNotice("apple");
 
   return (
     <div className="min-h-screen bg-background">
@@ -361,7 +316,15 @@ export default function Profile() {
                     </div>
                   </div>
 
-                  {latest?.status === "pending" ? (
+                  {statusPending ? (
+                    // Until the first answer arrives we genuinely don't know
+                    // what is linked. Saying so beats rendering "Connect" and
+                    // then flipping to a list of accounts a moment later.
+                    <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-sm font-medium text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Checking
+                    </span>
+                  ) : latest?.status === "pending" ? (
                     <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-sm font-medium text-muted-foreground">
                       <Loader2 className="h-4 w-4 animate-spin" />
                       Connecting
@@ -505,151 +468,29 @@ export default function Profile() {
                     {icsResult}
                   </p>
                 )}
-                <AnimatePresence initial={false}>
-                  {provider.id === "ics" && icsFormOpen && (
-                    <motion.form
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      onSubmit={(e) => void handleIcsSubmit(e)}
-                      className="overflow-hidden"
-                    >
-                      <div className="mt-4 flex flex-col gap-3 border-t pt-4">
-                        <label className="text-sm">
-                          <span className="mb-1 flex items-center gap-1.5 font-medium text-foreground">
-                            <Lock className="h-3.5 w-3.5" />
-                            Calendar link
-                          </span>
-                          <input
-                            type="text"
-                            required
-                            autoComplete="off"
-                            spellCheck={false}
-                            value={icsUrl}
-                            onChange={(e) => setIcsUrl(e.target.value)}
-                            placeholder="https://... or webcal://..."
-                            className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
-                          />
-                          <span className="mt-1 block text-xs text-muted-foreground">
-                            Treat this link like a password: anyone who has it can read the
-                            calendar. It is stored privately and never shown again.
-                          </span>
-                        </label>
-                        <label className="text-sm">
-                          <span className="mb-1 block font-medium text-foreground">
-                            Name (optional)
-                          </span>
-                          <input
-                            type="text"
-                            maxLength={80}
-                            value={icsName}
-                            onChange={(e) => setIcsName(e.target.value)}
-                            placeholder="e.g. CBS timetable"
-                            className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
-                          />
-                        </label>
-                        {icsError && (
-                          <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
-                            <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                            <span>{icsError}</span>
-                          </div>
-                        )}
-                        <div className="flex items-center gap-3">
-                          <button
-                            type="submit"
-                            disabled={icsSubmitting}
-                            className="flex items-center gap-2 rounded-full bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition hover:opacity-90 disabled:opacity-60"
-                          >
-                            {icsSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                            {icsSubmitting ? "Reading calendar" : "Add link"}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={icsSubmitting}
-                            onClick={() => {
-                              setIcsFormOpen(false);
-                              setIcsError(null);
-                            }}
-                            className="text-sm text-muted-foreground transition hover:text-foreground"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    </motion.form>
-                  )}
-                </AnimatePresence>
+                {provider.id === "ics" && (
+                  // The key clears the typed link after a successful add, so
+                  // "Add another link" starts from an empty form.
+                  <IcsLinkForm
+                    key={icsAddedCount}
+                    open={icsFormOpen}
+                    submitting={icsSubmitting}
+                    error={icsError}
+                    onSubmit={(url, name) => void handleIcsSubmit(url, name)}
+                    onCancel={() => {
+                      setIcsFormOpen(false);
+                      setIcsError(null);
+                    }}
+                  />
+                )}
 
-                {/* Apple's app-specific-password form */}
-                <AnimatePresence initial={false}>
-                  {provider.id === "apple" && appleFormOpen && (
-                    <motion.form
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      onSubmit={handleAppleSubmit}
-                      className="overflow-hidden"
-                    >
-                      <div className="mt-4 flex flex-col gap-3 border-t pt-4">
-                        <label className="text-sm">
-                          <span className="mb-1 block font-medium text-foreground">
-                            iCloud email
-                          </span>
-                          <input
-                            type="email"
-                            required
-                            value={appleEmail}
-                            onChange={(e) => setAppleEmail(e.target.value)}
-                            placeholder="you@icloud.com"
-                            className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
-                          />
-                        </label>
-                        <label className="text-sm">
-                          <span className="mb-1 flex items-center gap-1.5 font-medium text-foreground">
-                            <Lock className="h-3.5 w-3.5" />
-                            App-specific password
-                          </span>
-                          <input
-                            type="password"
-                            required
-                            value={applePassword}
-                            onChange={(e) => setApplePassword(e.target.value)}
-                            placeholder="xxxx-xxxx-xxxx-xxxx"
-                            className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
-                          />
-                          <span className="mt-1 block text-xs text-muted-foreground">
-                            Generate one at{" "}
-                            <a
-                              href="https://appleid.apple.com"
-                              target="_blank"
-                              rel="noreferrer"
-                              className="underline underline-offset-2 hover:text-foreground"
-                            >
-                              appleid.apple.com
-                            </a>{" "}
-                            under Sign-In and Security. Autodate never sees your
-                            main Apple ID password.
-                          </span>
-                        </label>
-                        <div className="flex items-center gap-3">
-                          <button
-                            type="submit"
-                            className="rounded-full bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
-                          >
-                            Connect
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setAppleFormOpen(false)}
-                            className="text-sm text-muted-foreground transition hover:text-foreground"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    </motion.form>
-                  )}
-                </AnimatePresence>
+                {provider.id === "apple" && (
+                  <AppleCredentialsForm
+                    open={appleFormOpen}
+                    onSubmit={handleAppleSubmit}
+                    onCancel={() => setAppleFormOpen(false)}
+                  />
+                )}
 
                 {/* Stub notice after attempting to connect */}
                 <AnimatePresence initial={false}>

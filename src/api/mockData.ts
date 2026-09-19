@@ -53,12 +53,6 @@ const SEARCH_END = new Date(PLAN_END).toISOString();
 /** The window the scheduler searches and has generated calendar data for. */
 export const SEARCH_WINDOW = { start: SEARCH_START, end: SEARCH_END };
 
-/**
- * Who is using the app in the demo. Conflict review ("you have X in your
- * calendar" vs "waiting for Simon to review") hinges on whose calendar it is.
- */
-export const CURRENT_USER_ID = "asbjorn";
-
 /* ----------------------------------------------------------------------------
  * People & groups
  *
@@ -361,11 +355,31 @@ function generateCalendar(personId: string): BusyInterval[] {
   // Real calendars don't double-book: only add an event if its slot is still
   // free. Things are added structural-first, so a fixed commitment (work, a
   // class, the weekly training night) takes precedence over a spontaneous plan.
+  //
+  // Events are indexed by the days they touch so the clash check only looks at
+  // that day's handful of events. Scanning the whole calendar each time made
+  // building 21 people's years an O(n²) job that blocked startup for half a
+  // second; nothing here is visible to callers except the speed.
+  const byDay = new Map<number, { start: number; end: number }[]>();
+  const dayIndex = (ms: number) => Math.floor((ms - PLAN_START) / MS_PER_DAY);
+
   const tryPush = (ev: BusyInterval) => {
     const s = Date.parse(ev.start);
     const e = Date.parse(ev.end);
-    if (events.some((b) => Date.parse(b.start) < e && Date.parse(b.end) > s)) return;
+    const firstDay = dayIndex(s);
+    const lastDay = dayIndex(e - 1); // end is exclusive
+    for (let d = firstDay; d <= lastDay; d++) {
+      for (const iv of byDay.get(d) ?? []) {
+        if (iv.start < e && iv.end > s) return;
+      }
+    }
     events.push(ev);
+    const iv = { start: s, end: e };
+    for (let d = firstDay; d <= lastDay; d++) {
+      const list = byDay.get(d);
+      if (list) list.push(iv);
+      else byDay.set(d, [iv]);
+    }
   };
 
   // --- The fixed weekly schedule -------------------------------------------

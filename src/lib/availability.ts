@@ -84,17 +84,43 @@ function parseRange(startIso: string, endIso: string): Interval | null {
     : null;
 }
 
+/**
+ * Parsed bounds per block, remembered for the life of the block object.
+ *
+ * A block's ISO strings never change, but the same blocks are re-tested
+ * thousands of times — the heatmap alone asks about every participant's whole
+ * calendar once per day cell. `Date.parse` is ~33x slower than comparing two
+ * numbers, so parsing once per block instead of once per test is the
+ * difference between a calendar that redraws instantly and one that stutters.
+ * A WeakMap keeps this invisible to callers and lets blocks be collected
+ * normally when the data they came from goes away.
+ */
+const parsedBlocks = new WeakMap<BusyInterval, Interval | null>();
+
 /** Parse one busy block; null if malformed or empty (never crash on bad data). */
 function parseBlock(block: BusyInterval): Interval | null {
+  const cached = parsedBlocks.get(block);
+  if (cached !== undefined) return cached;
+
   const start = Date.parse(block.start);
   const end = Date.parse(block.end);
-  return Number.isFinite(start) && Number.isFinite(end) && end > start
-    ? { start, end }
-    : null;
+  const parsed =
+    Number.isFinite(start) && Number.isFinite(end) && end > start
+      ? { start, end }
+      : null;
+  parsedBlocks.set(block, parsed);
+  return parsed;
 }
 
-/** True if the block overlaps [start, end) — the standard half-open test. */
-function blockOverlaps(block: BusyInterval, start: number, end: number): boolean {
+/**
+ * True if the block overlaps [start, end) — the standard half-open test, and
+ * the one definition of "busy then" the whole app shares.
+ */
+export function blockOverlaps(
+  block: BusyInterval,
+  start: number,
+  end: number,
+): boolean {
   const iv = parseBlock(block);
   return iv !== null && iv.start < end && iv.end > start;
 }
@@ -180,14 +206,21 @@ export function spanAvailability(
   let free = 0;
   let conditional = 0;
   for (const p of participants) {
-    if (p.busy.some((b) => isHardBlock(b) && blockOverlaps(b, spanStart, spanEnd))) {
-      continue;
+    // One pass per person: the overlap test is the cheap filter, so it runs
+    // first and classification only happens for blocks that actually clash.
+    let hard = false;
+    let soft = false;
+    for (const b of p.busy) {
+      if (!blockOverlaps(b, spanStart, spanEnd)) continue;
+      if (isSoftBlock(b)) soft = true;
+      else if (isHardBlock(b)) {
+        hard = true;
+        break; // away all day; nothing else about this person matters
+      }
     }
-    if (p.busy.some((b) => isSoftBlock(b) && blockOverlaps(b, spanStart, spanEnd))) {
-      conditional++;
-    } else {
-      free++;
-    }
+    if (hard) continue;
+    if (soft) conditional++;
+    else free++;
   }
   return { free, conditional };
 }

@@ -1,6 +1,8 @@
 import { Link, useLocation } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { User } from "lucide-react";
 
+import { calendarStatusQuery } from "@/api/calendarStatus";
 import { cn } from "@/lib/utils";
 
 /**
@@ -10,7 +12,24 @@ import { cn } from "@/lib/utils";
  */
 export default function TopNav() {
   const { pathname } = useLocation();
+  const queryClient = useQueryClient();
   const onProfile = pathname === "/profile";
+
+  /**
+   * Warm both halves of the profile page as soon as someone shows intent to go
+   * there: its code chunk, and the calendar status it opens by asking for.
+   * Supabase takes roughly a third of a second to answer, and a pointer
+   * resting on a link is usually good for about that long, so the page tends
+   * to have what it needs by the time it mounts. Hovering without clicking
+   * costs one cheap read, and React Query dedupes it against the page's own
+   * request. The import specifier matches the one App.tsx lazy-loads, so this
+   * fetches that exact chunk rather than a second copy.
+   */
+  const prefetchProfile = () => {
+    if (onProfile) return;
+    void import("@/pages/Profile");
+    void queryClient.prefetchQuery(calendarStatusQuery());
+  };
 
   return (
     <nav className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
@@ -23,6 +42,9 @@ export default function TopNav() {
         </a>
         <Link
           to="/profile"
+          onMouseEnter={prefetchProfile}
+          onFocus={prefetchProfile}
+          onTouchStart={prefetchProfile}
           className={cn(
             "flex items-center gap-1.5 transition hover:text-foreground",
             onProfile && "text-foreground",

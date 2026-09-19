@@ -1,0 +1,19 @@
+/**
+ * Weekday vocabulary for the scheduling UI. Days are UTC day-of-week values
+ * (0 = Sunday … 6 = Saturday), matching what the engine's `allowedDays` and
+ * `WeeklySpanShape.anchorDow` expect, but listed Monday-first for display.
+ */
+
+/** All days of the week in Monday-first display order (UTC values). */
+export const ALL_DOWS = [1, 2, 3, 4, 5, 6, 0];
+
+/** Short English labels indexed by UTC day-of-week. */
+export const DOW_SHORT: Record<number, string> = {
+  0: "Sun",
+  1: "Mon",
+  2: "Tue",
+  3: "Wed",
+  4: "Thu",
+  5: "Fri",
+  6: "Sat",
+};

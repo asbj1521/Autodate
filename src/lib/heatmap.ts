@@ -10,7 +10,11 @@
  * Like the engine, this is a pure function over the data model and works in UTC.
  */
 
-import { spanAvailability, type WeeklySpanShape } from "@/lib/availability";
+import {
+  blockOverlaps,
+  spanAvailability,
+  type WeeklySpanShape,
+} from "@/lib/availability";
 import type { Participant } from "@/types";
 
 export interface DayCell {
@@ -22,8 +26,6 @@ export interface DayCell {
   inMonth: boolean;
   /** True if this day is strictly before today (shown, but dimmed). */
   isPast: boolean;
-  /** True for Saturday/Sunday — used for subtle calendar styling. */
-  isWeekend: boolean;
   /** Participants genuinely free for the event on/starting this day. */
   freeCount: number;
   /**
@@ -60,11 +62,7 @@ const MON_FIRST_LABELS = [1, 2, 3, 4, 5, 6, 0].map((i) => DOW_LABELS[i]);
 
 /** True if the participant has no busy block overlapping [start, end). */
 function isFree(participant: Participant, start: number, end: number): boolean {
-  return !participant.busy.some((b) => {
-    const bs = Date.parse(b.start);
-    const be = Date.parse(b.end);
-    return bs < end && be > start; // standard half-open overlap test
-  });
+  return !participant.busy.some((b) => blockOverlaps(b, start, end));
 }
 
 /**
@@ -90,7 +88,6 @@ function freeForMeetingOnDay(
   }
   return count;
 }
-
 
 /** How availability is computed for each day cell. */
 export interface MonthGridOptions {
@@ -214,7 +211,6 @@ export function buildMonthGrid(
         dayOfMonth: d.getUTCDate(),
         inMonth,
         isPast: dayMidnight < todayMidnight,
-        isWeekend: dow === 0 || dow === 6,
         freeCount,
         conditionalCount,
         excluded,

@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertTriangle,
   CalendarDays,
   Check,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -15,16 +14,12 @@ import {
   Plus,
   RefreshCw,
   Sparkles,
-  Star,
   Tag,
-  Users,
 } from "lucide-react";
 
-import type { MonthGrid } from "@/lib/heatmap";
-
+import { CURRENT_USER_ID } from "@/api/currentUser";
 import {
   buildEventForGroup,
-  CURRENT_USER_ID,
   DAY_END,
   DAY_START,
   getMockGroups,
@@ -40,27 +35,21 @@ import {
   type WeeklySpanShape,
 } from "@/lib/availability";
 import { buildMonthGrid } from "@/lib/heatmap";
-import { formatDaySpan, formatSlot, formatTripSpan } from "@/lib/format";
-import type { FriendGroup, SchedulingResult } from "@/types";
+import { formatDaySpan, formatSlot, formatTime, formatTripSpan } from "@/lib/format";
+import type { SchedulingResult } from "@/types";
 import { avatarColor } from "@/lib/avatar";
+import { ACCENT_RGB, AMBER_RGB } from "@/lib/colors";
+import { DAY_MS, dayOf, monthStartMs } from "@/lib/day";
+import { ALL_DOWS } from "@/lib/weekdays";
 import { cn } from "@/lib/utils";
+import CalendarPanel from "@/components/CalendarPanel";
+import DaySlider from "@/components/DaySlider";
+import Dropdown from "@/components/Dropdown";
+import GroupSwitcher from "@/components/GroupSwitcher";
 import TopNav from "@/components/TopNav";
 
-/** The accent (coral/orange) as raw RGB, so heatmap cells can vary opacity. */
-const ACCENT_RGB = "249, 115, 22";
-
 /** Today as a UTC-midnight ISO (computed once), so the calendar can circle it. */
-const TODAY_DAY = new Date(
-  Math.floor(Date.now() / 86_400_000) * 86_400_000,
-).toISOString();
-
-const DAY_MS = 86_400_000;
-
-/** First-of-month (UTC ms) for a given instant. */
-const monthStartMs = (ms: number) => {
-  const d = new Date(ms);
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
-};
+const TODAY_DAY = dayOf(new Date().toISOString());
 
 /** First-of-month (UTC ms) for the month containing today — the default view. */
 const DEFAULT_MONTH = monthStartMs(Date.parse(TODAY_DAY));
@@ -140,20 +129,6 @@ const EVENT_TYPES: EventTypeDef[] = [
   { id: "vacation", label: "Vacation", kind: "vacation", defaultDays: 7 },
 ];
 
-/** All days of the week in Monday-first display order (UTC values). */
-const ALL_DOWS = [1, 2, 3, 4, 5, 6, 0];
-
-/** Short English labels indexed by UTC day-of-week. */
-const DOW_SHORT: Record<number, string> = {
-  0: "Sun",
-  1: "Mon",
-  2: "Tue",
-  3: "Wed",
-  4: "Thu",
-  5: "Fri",
-  6: "Sat",
-};
-
 /**
  * When a weekend trip starts and ends. 17:00 is "after work" in the demo data
  * (workdays run 09:00 to 17:00), so a normal Friday at the office doesn't show
@@ -162,9 +137,6 @@ const DOW_SHORT: Record<number, string> = {
  */
 const TRIP_START_HOUR = 17;
 const TRIP_END_HOUR = 21;
-
-/** Amber for "free only if they take time off", as raw RGB like ACCENT_RGB. */
-const AMBER_RGB = "245, 158, 11";
 
 /** Wheel options for the type picker (value = index into EVENT_TYPES). */
 const TYPE_OPTIONS = EVENT_TYPES.map((t, i) => ({ label: t.label, value: i }));
@@ -175,8 +147,11 @@ const DAYS_OPTIONS = Array.from({ length: 30 }, (_, i) => i + 1).map((d) => ({
   value: d,
 }));
 
-/** Where multi-day searches start from: today, or the window start if later. */
-const MULTI_SEARCH_BASE =
+/**
+ * Where every search starts from: today, or the window start if that's later.
+ * The past is never searched, and all four event kinds share this anchor.
+ */
+const SEARCH_BASE =
   Date.parse(TODAY_DAY) > Date.parse(SEARCH_WINDOW.start)
     ? TODAY_DAY
     : SEARCH_WINDOW.start;
@@ -186,483 +161,6 @@ function nameList(names: string[]): string {
   if (names.length <= 1) return names[0] ?? "";
   if (names.length === 2) return `${names[0]} and ${names[1]}`;
   return `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`;
-}
-
-/**
- * An iOS-style looping scroll wheel. The options are repeated many times so the
- * user can spin freely; on settle we snap to the centred item, report it, and
- * seamlessly recenter to keep the loop effectively endless.
- */
-function WheelPicker({
-  options,
-  value,
-  onChange,
-}: {
-  options: { label: string; value: number }[];
-  value: number;
-  onChange: (value: number) => void;
-}) {
-  const ITEM = 36;
-  const VISIBLE = 5;
-  const COPIES = 41;
-  const len = options.length;
-  const containerRef = useRef<HTMLDivElement>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const middleStart = Math.floor(COPIES / 2) * len;
-
-  const list = useMemo(
-    () => Array.from({ length: COPIES * len }, (_, i) => options[i % len]),
-    [options, len],
-  );
-
-  // Centre the current value when the wheel first mounts.
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const optIdx = Math.max(
-      0,
-      options.findIndex((o) => o.value === value),
-    );
-    el.scrollTop = (middleStart + optIdx) * ITEM;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [options]);
-
-  function handleScroll() {
-    const el = containerRef.current;
-    if (!el) return;
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      let absIdx = Math.round(el.scrollTop / ITEM);
-      const optIdx = ((absIdx % len) + len) % len;
-      // Snap, and recenter if we've drifted near either end of the repeats.
-      if (absIdx < len || absIdx >= (COPIES - 1) * len) {
-        absIdx = middleStart + optIdx;
-      }
-      el.scrollTop = absIdx * ITEM;
-      if (options[optIdx].value !== value) onChange(options[optIdx].value);
-    }, 90);
-  }
-
-  const pad = ((VISIBLE - 1) / 2) * ITEM;
-
-  return (
-    <div className="relative" style={{ height: VISIBLE * ITEM }}>
-      {/* Centre selection band */}
-      <div
-        className="pointer-events-none absolute inset-x-1 top-1/2 -translate-y-1/2 rounded-md border-y border-primary/40 bg-primary/5"
-        style={{ height: ITEM }}
-      />
-      {/* Fade top/bottom for the wheel illusion */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-9 bg-gradient-to-b from-card to-transparent" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-9 bg-gradient-to-t from-card to-transparent" />
-      <div
-        ref={containerRef}
-        onScroll={handleScroll}
-        className="h-full overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        style={{ scrollSnapType: "y mandatory" }}
-      >
-        <div style={{ paddingTop: pad, paddingBottom: pad }}>
-          {list.map((o, i) => (
-            <div
-              key={i}
-              className="flex items-center justify-center text-sm text-foreground"
-              style={{ height: ITEM, scrollSnapAlign: "center" }}
-            >
-              {o.label}
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** A small labelled dropdown that opens a looping wheel (type / duration / start). */
-function Dropdown({
-  icon,
-  value,
-  options,
-  onChange,
-  menuWidth = "w-32",
-}: {
-  icon: ReactNode;
-  value: number;
-  options: { label: string; value: number }[];
-  onChange: (value: number) => void;
-  /** Tailwind width class for the wheel popup (wider for long labels). */
-  menuWidth?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const current = options.find((o) => o.value === value);
-
-  return (
-    <div className="relative inline-block">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="inline-flex items-center gap-1.5 rounded-lg border bg-card px-2.5 py-1.5 text-sm font-medium text-foreground transition hover:bg-secondary"
-      >
-        {icon}
-        {current?.label}
-        <ChevronDown
-          className={cn(
-            "h-3.5 w-3.5 text-muted-foreground transition",
-            open && "rotate-180",
-          )}
-        />
-      </button>
-      <AnimatePresence>
-        {open && (
-          <>
-            <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-            <motion.div
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              className={cn(
-                "absolute left-0 z-20 mt-2 overflow-hidden rounded-xl border bg-card p-1 shadow-lg",
-                menuWidth,
-              )}
-            >
-              <WheelPicker options={options} value={value} onChange={onChange} />
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-/**
- * The day slider: two zones, with the seven weekday chips sliding between
- * them. Chips inside the marked (accent) zone are the days being searched —
- * or, for a trip, the days the trip covers; chips in the dashed zone are off.
- * Tapping a chip slides it across (Framer Motion layout animation).
- */
-function DaySlider({
-  selected,
-  onChange,
-  zoneLabel,
-}: {
-  /** Currently active days, as UTC day-of-week values. */
-  selected: number[];
-  onChange: (dows: number[]) => void;
-  /** What the marked zone means for this event type. */
-  zoneLabel: string;
-}) {
-  const inZone = ALL_DOWS.filter((d) => selected.includes(d));
-  const outZone = ALL_DOWS.filter((d) => !selected.includes(d));
-
-  function toggle(d: number) {
-    if (selected.includes(d)) {
-      if (selected.length <= 1) return; // at least one day must stay active
-      onChange(selected.filter((x) => x !== d));
-    } else {
-      onChange([...selected, d]);
-    }
-  }
-
-  return (
-    <LayoutGroup>
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex min-h-[34px] items-center gap-1 rounded-lg border border-primary/40 bg-primary/5 px-1.5 py-1">
-          <span className="px-1 text-[10px] font-medium uppercase tracking-wide text-primary">
-            {zoneLabel}
-          </span>
-          {inZone.map((d) => (
-            <motion.button
-              key={`dow-${d}`}
-              layoutId={`dow-${d}`}
-              onClick={() => toggle(d)}
-              className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground"
-            >
-              {DOW_SHORT[d]}
-            </motion.button>
-          ))}
-        </div>
-        <div className="flex min-h-[34px] items-center gap-1 rounded-lg border border-dashed px-1.5 py-1">
-          {outZone.length === 0 ? (
-            <span className="px-1 text-[10px] text-muted-foreground">
-              All days on
-            </span>
-          ) : (
-            outZone.map((d) => (
-              <motion.button
-                key={`dow-${d}`}
-                layoutId={`dow-${d}`}
-                onClick={() => toggle(d)}
-                className="rounded-md bg-secondary px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-              >
-                {DOW_SHORT[d]}
-              </motion.button>
-            ))
-          )}
-        </div>
-      </div>
-    </LayoutGroup>
-  );
-}
-
-/**
- * A dropdown to switch which friend group you're scheduling for. Used in two
- * places — the hero and the card title — via the `variant` prop, so users see
- * the "pick your group" idea immediately and again in context.
- */
-function GroupSwitcher({
-  groups,
-  selectedId,
-  onChange,
-  variant,
-}: {
-  groups: FriendGroup[];
-  selectedId: string;
-  onChange: (id: string) => void;
-  variant: "hero" | "title";
-}) {
-  const [open, setOpen] = useState(false);
-  const selected = groups.find((g) => g.id === selectedId);
-
-  return (
-    <div
-      className={cn(
-        "relative text-left",
-        variant === "hero" ? "block w-full" : "inline-block",
-      )}
-    >
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className={cn(
-          "transition",
-          variant === "hero" &&
-            "flex w-full items-center justify-between gap-2 rounded-lg border bg-background px-4 py-2.5 text-sm font-medium text-foreground hover:bg-secondary",
-          variant === "title" &&
-            "inline-flex items-center gap-2 rounded-lg px-1 -mx-1 text-2xl font-bold text-foreground hover:bg-secondary",
-        )}
-      >
-        <span className="flex items-center gap-2">
-          {variant === "hero" && <Users className="h-4 w-4 text-primary" />}
-          {selected?.name ?? "Select group"}
-        </span>
-        <ChevronDown
-          className={cn(
-            "text-muted-foreground transition",
-            variant === "hero" ? "h-4 w-4" : "h-5 w-5",
-            open && "rotate-180",
-          )}
-        />
-      </button>
-
-      <AnimatePresence>
-        {open && (
-          <>
-            {/* Click-away backdrop */}
-            <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-            <motion.div
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              className="absolute left-0 z-20 mt-2 w-full min-w-[15rem] overflow-hidden rounded-xl border bg-card p-1 shadow-lg"
-            >
-              <p className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Your friend groups
-              </p>
-              {groups.map((g) => (
-                <button
-                  key={g.id}
-                  onClick={() => {
-                    onChange(g.id);
-                    setOpen(false);
-                  }}
-                  className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition hover:bg-secondary"
-                >
-                  <span className="font-medium text-foreground">{g.name}</span>
-                  <span className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">
-                      {g.participants.length}
-                    </span>
-                    {g.id === selectedId && (
-                      <Check className="h-4 w-4 text-primary" />
-                    )}
-                  </span>
-                </button>
-              ))}
-              <div className="mt-1 border-t pt-1">
-                <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-primary transition hover:bg-secondary">
-                  <Plus className="h-4 w-4" />
-                  New group
-                </button>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-/**
- * The product card's calendar. A clean light month grid that fits the website,
- * taking just a hint from Apple Calendar: thin gridlines, Monday-first columns,
- * day numbers in the corner, muted spill-over days from neighbouring months,
- * past days kept in colour but dimmed under a grey veil, today circled, and
- * availability shown as a small event-style row (a coloured tick + "n/7 free"),
- * with the best meeting day rendered as a solid accent bar so it stands out.
- */
-function CalendarPanel({
-  grid,
-  bestDay,
-  bestSpanDays,
-  bestTimeLabel,
-  todayDay,
-}: {
-  grid: MonthGrid;
-  bestDay: string | null;
-  /** How many days the best slot covers (1 for normal meetings). */
-  bestSpanDays: number;
-  bestTimeLabel: string | null;
-  todayDay: string | null;
-}) {
-  const bestMs = bestDay ? Date.parse(bestDay) : null;
-  return (
-    <div className="overflow-hidden rounded-xl border bg-card">
-      {/* Weekday headers */}
-      <div className="grid grid-cols-7 border-b bg-secondary/40">
-        {grid.weekdayLabels.map((label) => (
-          <div
-            key={label}
-            className="px-2 py-2 text-xs font-medium text-muted-foreground"
-          >
-            {label}
-          </div>
-        ))}
-      </div>
-
-      {/* Day grid */}
-      <div className="grid grid-cols-7">
-        {grid.weeks.flat().map((cell) => {
-          const frac = grid.total === 0 ? 0 : cell.freeCount / grid.total;
-          const condFrac =
-            grid.total === 0 ? 0 : cell.conditionalCount / grid.total;
-          const isToday = cell.date === todayDay;
-          // Spill-over days belong to a neighbouring month; we mute those.
-          const inMonth = cell.inMonth;
-          const isPast = inMonth && cell.isPast;
-          // Best-slot highlight: a single day for meetings, a run of days for
-          // multi-day events. The first day carries the star + label; the rest
-          // get a solid continuation bar.
-          const cellMs = Date.parse(cell.date);
-          const inBestSpan =
-            bestMs !== null &&
-            inMonth &&
-            !cell.isPast &&
-            cellMs >= bestMs &&
-            cellMs < bestMs + bestSpanDays * DAY_MS;
-          const isBestStart = inBestSpan && cellMs === bestMs;
-          // The 1st of a month is labelled with its abbreviation, e.g. "1. jul.".
-          const numberLabel =
-            cell.dayOfMonth === 1
-              ? `1. ${new Date(cell.date).toLocaleString("da-DK", {
-                  month: "short",
-                  timeZone: "UTC",
-                })}`
-              : cell.dayOfMonth;
-
-          return (
-            <div
-              key={cell.date}
-              title={
-                inMonth && !isPast && !cell.excluded
-                  ? `${cell.freeCount}/${cell.total} can meet${
-                      cell.conditionalCount > 0
-                        ? `, ${cell.conditionalCount} would need time off`
-                        : ""
-                    }`
-                  : undefined
-              }
-              className="relative min-h-[84px] border-b border-r p-1.5"
-              style={
-                inMonth && !cell.excluded
-                  ? frac > 0
-                    ? {
-                        backgroundColor: `rgba(${ACCENT_RGB}, ${(0.06 + 0.3 * frac).toFixed(3)})`,
-                      }
-                    : cell.conditionalCount > 0
-                      ? {
-                          // Nobody is outright free, but some could take time
-                          // off: amber, not orange, so it reads as "possible
-                          // with effort" rather than "available".
-                          backgroundColor: `rgba(${AMBER_RGB}, ${(0.08 + 0.22 * condFrac).toFixed(3)})`,
-                        }
-                      : undefined
-                  : undefined
-              }
-            >
-              {/* Date number (today gets a filled circle) */}
-              <div className="flex">
-                <span
-                  className={cn(
-                    "inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-xs",
-                    !inMonth && "text-muted-foreground/40",
-                    inMonth && isPast && "text-muted-foreground",
-                    inMonth && !isPast && !isToday && "text-foreground",
-                    isToday && "bg-primary font-semibold text-primary-foreground",
-                  )}
-                >
-                  {numberLabel}
-                </span>
-              </div>
-
-              {/* Availability event — upcoming, searched days only; past days
-                  show colour only, excluded days stay neutral */}
-              {inMonth && !isPast && !cell.excluded && (
-                <div className="mt-1">
-                  {inBestSpan ? (
-                    isBestStart ? (
-                      <div
-                        className="flex items-center gap-1 rounded-[4px] px-1 py-0.5 text-[10px] font-semibold text-primary-foreground"
-                        style={{ backgroundColor: `rgb(${ACCENT_RGB})` }}
-                      >
-                        <Star className="h-2.5 w-2.5 shrink-0 fill-current" />
-                        <span className="truncate">
-                          Best{bestTimeLabel ? ` · ${bestTimeLabel}` : ""}
-                        </span>
-                      </div>
-                    ) : (
-                      <div
-                        className="h-[19px] rounded-[4px]"
-                        style={{ backgroundColor: `rgb(${ACCENT_RGB})` }}
-                      />
-                    )
-                  ) : (
-                    <div className="flex items-center gap-1">
-                      <span
-                        className="h-3.5 w-[3px] shrink-0 rounded-full"
-                        style={{
-                          backgroundColor:
-                            cell.freeCount === 0 && cell.conditionalCount > 0
-                              ? `rgba(${AMBER_RGB}, 0.9)`
-                              : `rgba(${ACCENT_RGB}, ${(0.35 + 0.65 * frac).toFixed(2)})`,
-                        }}
-                      />
-                      <span className="truncate text-[10px] text-muted-foreground">
-                        {cell.conditionalCount > 0
-                          ? `${cell.freeCount}/${cell.total} free · ${cell.conditionalCount} work`
-                          : `${cell.freeCount}/${cell.total} free`}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Past days keep their colour but get a grey veil laid over the top. */}
-              {isPast && (
-                <div className="pointer-events-none absolute inset-0 bg-zinc-400/35" />
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
 }
 
 export default function FindDate() {
@@ -684,7 +182,13 @@ export default function FindDate() {
   // Which month the calendar shows (first-of-month ms), and which way it slides.
   const [viewMonth, setViewMonth] = useState(DEFAULT_MONTH);
   const [slideDir, setSlideDir] = useState(1);
+  // Bumped by the Find buttons to ask the calendar to page to the new result.
+  const [revealRequest, setRevealRequest] = useState(0);
   const cardRef = useRef<HTMLDivElement>(null);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // Don't leave the "Copied!" timer running after the page goes away.
+  useEffect(() => () => clearTimeout(copiedTimer.current), []);
 
   const { data: groups } = useQuery({
     queryKey: ["mock-groups"],
@@ -766,22 +270,14 @@ export default function FindDate() {
     tripShape,
   ]);
 
-  // Never search the past — start from today (or the window start if later).
-  function searchBaseFor(ev: NonNullable<typeof event>): string {
-    return Date.parse(TODAY_DAY) > Date.parse(ev.searchStart)
-      ? TODAY_DAY
-      : ev.searchStart;
-  }
-
   // The earliest slot the whole group can actually meet, recomputed
   // automatically whenever the group, duration, start time, or search anchor
   // changes — so the front page always shows a real, calendar-derived time
   // without anyone having to press a button.
   const result = useMemo<SchedulingResult | null>(() => {
     if (!event || isMultiDay) return null;
-    const searchStart = searchFrom ?? searchBaseFor(event);
+    const searchStart = searchFrom ?? SEARCH_BASE;
     return findEarliestSlot({ ...event, searchStart });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event, searchFrom, isMultiDay]);
 
   // Multi-day events search whole days (vacation) or weekly windows (trip)
@@ -810,7 +306,7 @@ export default function FindDate() {
 
   const multiResult = useMemo<MultiDayResult | null>(() => {
     if (!isMultiDay) return null;
-    return runMultiSearch(searchFrom ?? MULTI_SEARCH_BASE);
+    return runMultiSearch(searchFrom ?? SEARCH_BASE);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMultiDay, activeGroup, eventType, days, tripShape, searchFrom]);
 
@@ -822,23 +318,42 @@ export default function FindDate() {
     return findVacationSuggestions(
       activeGroup.participants,
       days,
-      searchFrom ?? MULTI_SEARCH_BASE,
+      searchFrom ?? SEARCH_BASE,
       SEARCH_WINDOW.end,
     );
   }, [eventType, activeGroup, multiResult, days, searchFrom]);
 
+  // Whichever search is active (single meeting vs multi-day span), the slot it
+  // found drives the calendar highlight and the banner.
+  const activeSlot = (isMultiDay ? multiResult?.slot : result?.slot) ?? null;
+
+  // The day (UTC midnight ISO) containing the best slot, for highlighting.
+  const bestDay = activeSlot ? dayOf(activeSlot.start) : null;
+
+  // "11:00"-style label for the best slot's start time; meaningless for
+  // whole-day spans, so omitted there.
+  const bestTimeLabel =
+    activeSlot && !isMultiDay ? formatTime(activeSlot.start) : null;
+
+  /**
+   * Changing any setting re-anchors the search to today and drops a previous
+   * approval — the dates it applied to are no longer the dates on offer.
+   */
+  function resetSearch(from: string | null = null) {
+    setSearchFrom(from);
+    setAcceptedSlot(null);
+  }
+
   /** Adopt a suggested workaround: shorter stay, anchored on its dates. */
   function applySuggestion(s: VacationSuggestion) {
     setDays(s.days);
-    setSearchFrom(dayOf(s.slot.start));
-    setAcceptedSlot(null);
+    resetSearch(dayOf(s.slot.start));
     revealDay(dayOf(s.slot.start));
   }
 
   function handleSelectGroup(id: string) {
     setSelectedGroupId(id);
-    setSearchFrom(null); // re-anchor to the earliest slot for the new group
-    setAcceptedSlot(null);
+    resetSearch(); // re-anchor to the earliest slot for the new group
     setSlideDir(-1);
     setViewMonth(DEFAULT_MONTH); // show the new group from the current month
   }
@@ -854,8 +369,7 @@ export default function FindDate() {
       setStartHour(t.startHour ?? 18);
     }
     setSelectedDows(t.defaultDows ?? ALL_DOWS);
-    setSearchFrom(null);
-    setAcceptedSlot(null);
+    resetSearch();
   }
 
   function handleDows(dows: number[]) {
@@ -867,31 +381,22 @@ export default function FindDate() {
       next = ALL_DOWS.slice(idxs[0], idxs[idxs.length - 1] + 1);
     }
     setSelectedDows(next);
-    setSearchFrom(null);
-    setAcceptedSlot(null);
+    resetSearch();
   }
 
   function handleDuration(value: number) {
     setDurationMinutes(value);
-    setSearchFrom(null); // settings changed — re-anchor to today
-    setAcceptedSlot(null);
+    resetSearch();
   }
 
   function handleStartHour(value: number) {
     setStartHour(value);
-    setSearchFrom(null);
-    setAcceptedSlot(null);
+    resetSearch();
   }
 
   function handleDays(value: number) {
     setDays(value);
-    setSearchFrom(null);
-    setAcceptedSlot(null);
-  }
-
-  /** Midnight-ISO of the day containing an instant. */
-  function dayOf(iso: string): string {
-    return new Date(Math.floor(Date.parse(iso) / DAY_MS) * DAY_MS).toISOString();
+    resetSearch();
   }
 
   /**
@@ -906,6 +411,21 @@ export default function FindDate() {
     setViewMonth(month);
   }
 
+  /**
+   * Page the calendar to whatever the Find buttons just turned up. They only
+   * bump `revealRequest`; by the time this runs, the memos above have already
+   * recomputed, so `activeSlot` here is the new result. Running the search a
+   * second time inside the click handler was both wasted work and a chance for
+   * the two answers to disagree.
+   */
+  useEffect(() => {
+    if (revealRequest === 0 || !activeSlot) return;
+    revealDay(dayOf(activeSlot.start));
+    // Deliberately keyed on the request alone: changing a setting recomputes
+    // activeSlot too, and that must not move the calendar on its own.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealRequest]);
+
   /** Step the calendar a month back (-1) or forward (+1), within the data range. */
   function pageMonth(delta: number) {
     const d = new Date(viewMonth);
@@ -915,37 +435,17 @@ export default function FindDate() {
     setViewMonth(month);
   }
 
-  /** Re-find the earliest slot from today and scroll to it if it's off screen. */
+  /** Re-find the earliest slot from today and page the calendar to it. */
   function handleFindBest() {
-    setSearchFrom(null);
-    setAcceptedSlot(null);
-    if (isMultiDay) {
-      const res = runMultiSearch(MULTI_SEARCH_BASE);
-      if (res?.slot) revealDay(dayOf(res.slot.start));
-      return;
-    }
-    if (!event) return;
-    const res = findEarliestSlot({ ...event, searchStart: searchBaseFor(event) });
-    if (res.slot) revealDay(dayOf(res.slot.start));
+    resetSearch();
+    setRevealRequest((n) => n + 1);
   }
 
   /** Advance the search past the current slot's day to surface the next one. */
   function handleFindNew() {
-    const currentSlot = isMultiDay ? multiResult?.slot : result?.slot;
-    if (!currentSlot) return;
-    const nextDay = new Date(
-      Math.floor(Date.parse(currentSlot.start) / DAY_MS) * DAY_MS + DAY_MS,
-    ).toISOString();
-    setSearchFrom(nextDay);
-    setAcceptedSlot(null);
-    if (isMultiDay) {
-      const res = runMultiSearch(nextDay);
-      if (res?.slot) revealDay(dayOf(res.slot.start));
-      return;
-    }
-    if (!event) return;
-    const res = findEarliestSlot({ ...event, searchStart: nextDay });
-    if (res.slot) revealDay(dayOf(res.slot.start));
+    if (!activeSlot) return;
+    resetSearch(new Date(Date.parse(dayOf(activeSlot.start)) + DAY_MS).toISOString());
+    setRevealRequest((n) => n + 1);
   }
 
   function handleCreateEvent() {
@@ -955,33 +455,9 @@ export default function FindDate() {
   function handleCopy() {
     navigator.clipboard?.writeText(window.location.href).catch(() => {});
     setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
+    clearTimeout(copiedTimer.current);
+    copiedTimer.current = setTimeout(() => setCopied(false), 1800);
   }
-
-  // Whichever search is active (single meeting vs multi-day span), the slot it
-  // found drives the calendar highlight and the banner.
-  const activeSlot = (isMultiDay ? multiResult?.slot : result?.slot) ?? null;
-
-  // The day (UTC midnight ISO) containing the best slot, for highlighting.
-  const bestDay = activeSlot
-    ? new Date(
-        Math.floor(Date.parse(activeSlot.start) / 86_400_000) * 86_400_000,
-      ).toISOString()
-    : null;
-
-  // "11:00"-style label for the best slot's start time (UTC); meaningless for
-  // whole-day spans, so omitted there.
-  const bestTimeLabel =
-    activeSlot && !isMultiDay
-      ? new Date(activeSlot.start).toLocaleTimeString("en-GB", {
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-          timeZone: "UTC",
-        })
-      : null;
-
-  const todayDay = TODAY_DAY;
 
   // How many calendar days the best slot's highlight covers.
   const bestSpanDays =
@@ -1358,7 +834,7 @@ export default function FindDate() {
                         bestDay={bestDay}
                         bestSpanDays={bestSpanDays}
                         bestTimeLabel={bestTimeLabel}
-                        todayDay={todayDay}
+                        todayDay={TODAY_DAY}
                       />
                     )}
                   </motion.div>

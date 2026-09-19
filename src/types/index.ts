@@ -35,26 +35,6 @@ export type EventCategory =
   | "personal"
   | "family";
 
-/** A person using Autodate. */
-export interface Profile {
-  id: string;
-  name: string;
-  /** E.164 format preferred (e.g. "+4512345678"), but not enforced yet. */
-  phone: string;
-  calendars: Calendar[];
-}
-
-/** One connected calendar belonging to a profile. */
-export interface Calendar {
-  id: string;
-  /** The profile this calendar belongs to. */
-  ownerId: string;
-  provider: CalendarProvider;
-  purpose: CalendarPurpose;
-  /** Display name, usually the account email or calendar name. */
-  label: string;
-}
-
 /**
  * A single block of time during which someone is unavailable.
  *
