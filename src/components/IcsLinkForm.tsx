@@ -1,6 +1,8 @@
-import { useState, type FormEvent } from "react";
+import { useId, useState, type FormEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, Lock, XCircle } from "lucide-react";
+
+import InfoTip from "@/components/InfoTip";
 
 /**
  * The "add a calendar by link" form: a feed URL and an optional name.
@@ -25,6 +27,7 @@ export default function IcsLinkForm({
 }) {
   const [url, setUrl] = useState("");
   const [name, setName] = useState("");
+  const urlId = useId();
 
   function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -42,12 +45,20 @@ export default function IcsLinkForm({
           className="overflow-hidden"
         >
           <div className="mt-4 flex flex-col gap-3 border-t pt-4">
-            <label className="text-sm">
-              <span className="mb-1 flex items-center gap-1.5 font-medium text-foreground">
+            <div className="text-sm">
+              {/* The (i) sits beside the label, not inside it: a button inside a
+                  <label> would take over the label from its input. */}
+              <div className="mb-1 flex items-center gap-1.5 font-medium text-foreground">
                 <Lock className="h-3.5 w-3.5" />
-                Calendar link
-              </span>
+                <label htmlFor={urlId}>Calendar link</label>
+                <InfoTip label="About calendar links">
+                  Anyone who has this link can read the calendar. It is stored privately and never
+                  shown again. Only start and end times are kept; titles, places and attendees are
+                  removed before anything is stored.
+                </InfoTip>
+              </div>
               <input
+                id={urlId}
                 type="text"
                 required
                 autoComplete="off"
@@ -58,10 +69,9 @@ export default function IcsLinkForm({
                 className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
               />
               <span className="mt-1 block text-xs text-muted-foreground">
-                Treat this link like a password: anyone who has it can read the
-                calendar. It is stored privately and never shown again.
+                Treat this link like a password.
               </span>
-            </label>
+            </div>
             <label className="text-sm">
               <span className="mb-1 block font-medium text-foreground">
                 Name (optional)
