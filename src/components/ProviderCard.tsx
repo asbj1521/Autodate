@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import {
+  AlertTriangle,
   CalendarPlus,
   CheckCircle2,
   ChevronDown,
@@ -11,7 +12,7 @@ import {
 
 import type { CalendarConnectionStatus } from "@/api/calendarStatus";
 import InfoTip from "@/components/InfoTip";
-import { calendarNames, hasDistinctCalendarNames, plural } from "@/lib/accountSummary";
+import { calendarNames, hasDistinctCalendarNames, plural, syncedAgo } from "@/lib/accountSummary";
 import { cn } from "@/lib/utils";
 import type { CalendarProvider } from "@/types";
 
@@ -76,13 +77,22 @@ function AccountRow({
 }) {
   const [namesOpen, setNamesOpen] = useState(false);
   const count = account.calendar_sources.length;
+  // The clock is read once, when the row appears: rendering must not depend
+  // on the time it happens to run, and minutes-level freshness is plenty.
+  const [now] = useState(Date.now);
+  const synced = syncedAgo(account.last_synced_at, now);
+  const reconnect = account.needs_reconnect;
   // Names are only worth a click when they say more than the row's own title.
   const expandable = hasDistinctCalendarNames(account);
 
   return (
     <li className="py-3">
       <div className="flex items-center gap-3">
-        <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+        {reconnect ? (
+          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+        ) : (
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+        )}
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-foreground">
             {account.account_label ?? "unknown account"}
@@ -104,7 +114,22 @@ function AccountRow({
               <span>{plural(count, "calendar")}</span>
             )}
             <span>· {plural(account.busyCount, "busy block")}</span>
+            {synced && <span>· {synced}</span>}
+            {/* A temporary failure: the busy times shown are the last good
+                ones and the next run retries, so this stays quiet. */}
+            {account.sync_error && !reconnect && (
+              <span className="text-amber-700" title={account.sync_error}>
+                · last sync failed, retrying
+              </span>
+            )}
           </p>
+          {reconnect && (
+            <p className="mt-0.5 text-xs font-medium text-amber-700">
+              {provider === "ics"
+                ? "This link stopped working. Remove it and add it again."
+                : "Access expired. Reconnect this account to keep it in sync."}
+            </p>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {provider !== "ics" && (
@@ -112,7 +137,12 @@ function AccountRow({
               type="button"
               onClick={onReconnect}
               title="Reconnect (pick this account again)"
-              className="flex h-8 w-8 items-center justify-center rounded-full border bg-background text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+              className={cn(
+                "flex h-8 w-8 items-center justify-center rounded-full border transition",
+                reconnect
+                  ? "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                  : "bg-background text-muted-foreground hover:bg-secondary hover:text-foreground",
+              )}
             >
               <RefreshCw className="h-3.5 w-3.5" />
             </button>

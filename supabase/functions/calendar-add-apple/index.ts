@@ -16,19 +16,15 @@
  */
 import { callerId } from "../_shared/auth.ts";
 import { corsHeaders } from "../_shared/cors.ts";
-import { discoverCalendars, CalDavError, fetchEventDocuments, mapPool } from "../_shared/caldav.ts";
+import { fetchAppleBusy, type AppleCalendarBusy } from "../_shared/appleBusy.ts";
+import { CalDavError } from "../_shared/caldav.ts";
 import { pruneSupersededConnections } from "../_shared/connections.ts";
-import { parseBusyIntervals } from "../_shared/ics.ts";
-import { mergeIntervals, type RawBusyInterval } from "../_shared/intervals.ts";
 import { encryptionKeyFromEnv, encryptSecret } from "../_shared/secretBox.ts";
 import { storeCalendars } from "../_shared/storeCalendars.ts";
 import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
-import { addMissingTimezones } from "../_shared/timezones.ts";
 
 // How far ahead to sync. Same window as the other providers.
 const SYNC_MONTHS_AHEAD = 12;
-// Calendars fetched at once: fast enough, gentle enough not to trip rate limits.
-const CALENDAR_CONCURRENCY = 4;
 const MAX_FIELD_LENGTH = 254;
 
 function json(body: unknown, status = 200): Response {
@@ -90,30 +86,13 @@ Deno.serve(async (req) => {
   const creds = { username, password };
   const windowStart = new Date();
   const windowEnd = new Date(Date.now() + SYNC_MONTHS_AHEAD * 30 * 24 * 60 * 60 * 1000);
-  let fetched: { id: string; name: string | null; intervals: RawBusyInterval[] }[];
-  let skippedEvents = 0;
+  let fetched: AppleCalendarBusy[];
+  let skippedEvents: number;
   try {
-    const calendars = await discoverCalendars(creds);
-    if (calendars.length === 0) {
+    ({ calendars: fetched, skippedEvents } = await fetchAppleBusy(creds, windowStart, windowEnd));
+    if (fetched.length === 0) {
       return json({ error: "That iCloud account has no calendars we can read." }, 400);
     }
-
-    fetched = await mapPool(calendars, CALENDAR_CONCURRENCY, async (cal) => {
-      const documents = await fetchEventDocuments(creds, cal.url, windowStart, windowEnd);
-      const intervals: RawBusyInterval[] = [];
-      for (const doc of documents) {
-        try {
-          // iCloud names time zones without defining them; fill those in first.
-          const complete = addMissingTimezones(doc, windowStart, windowEnd);
-          intervals.push(...parseBusyIntervals(complete, windowStart, windowEnd).intervals);
-        } catch {
-          // One unreadable event (an odd time zone, say) must not sink the
-          // whole account. It is counted so the user is told, not hidden.
-          skippedEvents++;
-        }
-      }
-      return { id: cal.id, name: cal.name, intervals: mergeIntervals(intervals) };
-    });
   } catch (err) {
     if (err instanceof CalDavError) return json({ error: err.message }, 400);
     console.error("calendar-add-apple unexpected failure before writing", err);

@@ -25,6 +25,7 @@
  */
 
 import { mergeIntervals, type RawBusyInterval } from "./intervals.ts";
+import { isInvalidGrant, ReauthRequired } from "./reauth.ts";
 
 const TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
 export const AUTHORIZE_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
@@ -75,6 +76,38 @@ export async function exchangeCodeForTokens(opts: {
   });
   if (!res.ok) {
     throw new Error(`Microsoft token exchange failed: ${res.status} ${await res.text()}`);
+  }
+  return res.json();
+}
+
+/**
+ * Trade the stored refresh token for a fresh access token. Microsoft usually
+ * returns a *new* refresh token as well and the old one eventually stops
+ * working, so the caller must store the replacement. Throws ReauthRequired
+ * when Microsoft refuses the refresh token itself.
+ */
+export async function refreshAccessToken(opts: {
+  refreshToken: string;
+  clientId: string;
+  clientSecret: string;
+}): Promise<OutlookTokens> {
+  const res = await fetch(TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      refresh_token: opts.refreshToken,
+      client_id: opts.clientId,
+      client_secret: opts.clientSecret,
+      grant_type: "refresh_token",
+      scope: SCOPES,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    if (isInvalidGrant(res.status, body)) {
+      throw new ReauthRequired("Microsoft no longer accepts this connection's access.");
+    }
+    throw new Error(`Microsoft token refresh failed: ${res.status} ${body}`);
   }
   return res.json();
 }
@@ -136,7 +169,7 @@ export async function listCalendars(accessToken: string): Promise<OutlookCalenda
   let next: string | undefined =
     `${GRAPH_URL}/me/calendars?$select=id,name,isDefaultCalendar,owner&$top=100`;
   while (next) {
-    const body = await graphGet<GraphList<OutlookCalendarListEntry>>(accessToken, next);
+    const body: GraphList<OutlookCalendarListEntry> = await graphGet(accessToken, next);
     items.push(...(body.value ?? []));
     next = body["@odata.nextLink"];
   }
@@ -179,9 +212,10 @@ async function queryCalendarChunk(
   let next: string | undefined =
     `${GRAPH_URL}/me/calendars/${encodeURIComponent(calendarId)}/calendarView?${params}`;
   while (next) {
-    const body = await graphGet<GraphList<GraphEvent>>(accessToken, next);
+    const body: GraphList<GraphEvent> = await graphGet(accessToken, next);
     for (const ev of body.value ?? []) {
-      if (ev.isCancelled || !BUSY_STATUSES.has(ev.showAs)) continue;
+      // No status at all is treated like an unknown one: not busy.
+      if (ev.isCancelled || !BUSY_STATUSES.has(ev.showAs ?? "")) continue;
       const start = new Date(Math.max(new Date(graphDateTimeToIso(ev.start.dateTime)).getTime(), timeMin.getTime()));
       const end = new Date(Math.min(new Date(graphDateTimeToIso(ev.end.dateTime)).getTime(), timeMax.getTime()));
       if (end > start) out.push({ start: start.toISOString(), end: end.toISOString() });

@@ -33,7 +33,7 @@ Deno.serve(async (req) => {
   const { data: connections, error } = await db
     .from("calendar_connections")
     .select(
-      "id, provider, status, account_label, error_message, created_at, last_synced_at, calendar_sources(id, display_name, purpose)",
+      "id, provider, status, account_label, error_message, created_at, last_synced_at, last_sync_attempt_at, sync_error, needs_reconnect, calendar_sources(id, display_name, purpose)",
     )
     .eq("profile_id", profileId)
     .order("created_at", { ascending: false });

@@ -5,6 +5,8 @@
  * reused by a future scheduled sync function, not just the OAuth callback.
  */
 
+import { isInvalidGrant, ReauthRequired } from "./reauth.ts";
+
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const CALENDAR_LIST_URL =
   "https://www.googleapis.com/calendar/v3/users/me/calendarList";
@@ -38,6 +40,36 @@ export async function exchangeCodeForTokens(opts: {
   });
   if (!res.ok) {
     throw new Error(`Google token exchange failed: ${res.status} ${await res.text()}`);
+  }
+  return res.json();
+}
+
+/**
+ * Trade the stored refresh token for a fresh access token (they last an
+ * hour). Throws ReauthRequired when Google refuses the refresh token itself,
+ * which in Testing mode happens seven days after consent.
+ */
+export async function refreshAccessToken(opts: {
+  refreshToken: string;
+  clientId: string;
+  clientSecret: string;
+}): Promise<GoogleTokens> {
+  const res = await fetch(TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      refresh_token: opts.refreshToken,
+      client_id: opts.clientId,
+      client_secret: opts.clientSecret,
+      grant_type: "refresh_token",
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    if (isInvalidGrant(res.status, body)) {
+      throw new ReauthRequired("Google no longer accepts this connection's access.");
+    }
+    throw new Error(`Google token refresh failed: ${res.status} ${body}`);
   }
   return res.json();
 }

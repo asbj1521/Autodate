@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CalendarConnectionStatus } from "@/api/calendarStatus";
-import { calendarNames, hasDistinctCalendarNames, plural } from "@/lib/accountSummary";
+import { calendarNames, hasDistinctCalendarNames, plural, syncedAgo } from "@/lib/accountSummary";
 
 const account = (
   label: string | null,
@@ -14,6 +14,9 @@ const account = (
   error_message: null,
   created_at: "2026-09-19T12:00:00Z",
   last_synced_at: null,
+  last_sync_attempt_at: null,
+  sync_error: null,
+  needs_reconnect: false,
   calendar_sources: names.map((n, i) => ({ id: `src-${i}`, display_name: n, purpose: null })),
   busyCount: 0,
 });
@@ -68,5 +71,28 @@ describe("hasDistinctCalendarNames", () => {
 
   it("is false when there are no calendars at all", () => {
     expect(hasDistinctCalendarNames(account("me@gmail.com", []))).toBe(false);
+  });
+});
+
+describe("syncedAgo", () => {
+  const now = Date.parse("2026-09-20T12:00:00.000Z");
+  const ago = (minutes: number) => new Date(now - minutes * 60_000).toISOString();
+
+  it("says nothing for an account that never synced", () => {
+    expect(syncedAgo(null, now)).toBeNull();
+  });
+
+  it("counts minutes, then hours, then days", () => {
+    expect(syncedAgo(ago(0), now)).toBe("Synced just now");
+    expect(syncedAgo(ago(12), now)).toBe("Synced 12 min ago");
+    expect(syncedAgo(ago(59), now)).toBe("Synced 59 min ago");
+    expect(syncedAgo(ago(60), now)).toBe("Synced 1 h ago");
+    expect(syncedAgo(ago(23 * 60 + 59), now)).toBe("Synced 23 h ago");
+    expect(syncedAgo(ago(24 * 60), now)).toBe("Synced 1 day ago");
+    expect(syncedAgo(ago(3 * 24 * 60), now)).toBe("Synced 3 days ago");
+  });
+
+  it("treats a clock slightly ahead of ours as just now", () => {
+    expect(syncedAgo(ago(-2), now)).toBe("Synced just now");
   });
 });

@@ -1,14 +1,22 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { CalendarDays, CheckCircle2, ChevronLeft, XCircle } from "lucide-react";
+import {
+  CalendarDays,
+  CheckCircle2,
+  ChevronLeft,
+  Loader2,
+  RefreshCw,
+  XCircle,
+} from "lucide-react";
 
 import AppleCredentialsForm from "@/components/AppleCredentialsForm";
 import IcsLinkForm from "@/components/IcsLinkForm";
 import ProviderCard, { type ProviderMeta } from "@/components/ProviderCard";
 import TopNav from "@/components/TopNav";
 import { displayName, useAuth } from "@/context/auth";
+import { plural } from "@/lib/accountSummary";
 import { avatarColor } from "@/lib/avatar";
 import {
   calendarStatusQuery,
@@ -96,6 +104,9 @@ export default function Profile() {
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<{ id: string; message: string } | null>(null);
   const [connectError, setConnectError] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const {
     data: connections,
@@ -145,6 +156,38 @@ export default function Profile() {
     setAppleResult(null);
     setAppleError(null);
   };
+
+  /**
+   * Fetch every connected account's busy times now, instead of waiting for
+   * the hourly run. The scheduling page reads the same data, so its cached
+   * copy is marked stale too.
+   */
+  const handleSyncNow = async () => {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const { results } = await callFunction<{ results: { ok: boolean }[] }>("calendar-sync", {
+        body: {},
+        errorMessage: "Couldn't sync",
+      });
+      const failed = results.filter((r) => !r.ok).length;
+      setSyncResult(
+        results.length === 0
+          ? { ok: true, text: "Everything was synced within the last minute." }
+          : failed === 0
+            ? { ok: true, text: `Synced ${plural(results.length, "account")}.` }
+            : { ok: false, text: `${failed} of ${plural(results.length, "account")} couldn't sync. See below.` },
+      );
+      await refetchStatus();
+      void queryClient.invalidateQueries({ queryKey: ["calendar-busy"] });
+    } catch (err) {
+      setSyncResult({ ok: false, text: err instanceof Error ? err.message : "Couldn't sync" });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const hasConnected = connections?.some((c) => c.status === "connected") ?? false;
 
   const handleIcsSubmit = async (url: string, name: string) => {
     setIcsSubmitting(true);
@@ -301,10 +344,45 @@ export default function Profile() {
 
         {/* Connected calendars */}
         <section className="mt-8">
-          <h2 className="text-lg font-semibold text-foreground">Connected calendars</h2>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Only free and busy times are read, never event titles or details.
-          </p>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">Connected calendars</h2>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                Only free and busy times are read, never event titles or details. Calendars sync
+                automatically every hour.
+              </p>
+            </div>
+            {hasConnected && (
+              <button
+                type="button"
+                onClick={() => void handleSyncNow()}
+                disabled={syncing}
+                className="flex shrink-0 items-center gap-2 rounded-full border bg-background px-3.5 py-1.5 text-sm font-semibold text-foreground transition hover:bg-secondary disabled:opacity-60"
+              >
+                {syncing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+                {syncing ? "Syncing" : "Sync now"}
+              </button>
+            )}
+          </div>
+          {syncResult && (
+            <p
+              className={cn(
+                "mt-2 flex items-center gap-2 text-sm",
+                syncResult.ok ? "text-emerald-800" : "text-red-800",
+              )}
+            >
+              {syncResult.ok ? (
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+              ) : (
+                <XCircle className="h-4 w-4 shrink-0" />
+              )}
+              {syncResult.text}
+            </p>
+          )}
 
           <div className="mt-4 grid items-start gap-4 lg:grid-cols-2">
             {PROVIDERS.map((provider) => {

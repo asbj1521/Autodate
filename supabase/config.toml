@@ -425,6 +425,13 @@ verify_jwt = false
 # connections can be removed.
 verify_jwt = false
 
+[functions.calendar-sync]
+# Two callers, both checked in code: the hourly pg_cron job by a shared secret
+# (x-sync-secret), and a signed-in person's "Sync now" by their login
+# (_shared/auth.ts). The gateway check stays off because neither is a JWT the
+# gateway could verify for the scheduler.
+verify_jwt = false
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.

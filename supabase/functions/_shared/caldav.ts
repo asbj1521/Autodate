@@ -23,6 +23,13 @@ import { XMLParser } from "npm:fast-xml-parser@4.5.1";
 /** A problem that is safe to show to the user as-is. */
 export class CalDavError extends Error {}
 
+/**
+ * iCloud refused the login itself. A CalDavError like any other to the
+ * connect form, but the sync tells it apart: a deleted app-specific password
+ * won't come back by retrying, so the account needs reconnecting.
+ */
+export class CalDavLoginError extends CalDavError {}
+
 export interface CalDavCredentials {
   username: string;
   password: string;
@@ -108,7 +115,7 @@ async function dav(
     }
     if (res.status === 401 || res.status === 403) {
       await res.body?.cancel();
-      throw new CalDavError(BAD_LOGIN);
+      throw new CalDavLoginError(BAD_LOGIN);
     }
     if (!res.ok) {
       await res.body?.cancel();

@@ -25,7 +25,14 @@ export interface CalendarConnectionStatus {
   account_label: string | null;
   error_message: string | null;
   created_at: string;
+  /** When busy times were last fetched successfully. */
   last_synced_at: string | null;
+  /** When a sync last tried, successful or not. */
+  last_sync_attempt_at: string | null;
+  /** Why the latest sync failed, written for the person; null when it worked. */
+  sync_error: string | null;
+  /** The provider refused the stored access; only reconnecting helps. */
+  needs_reconnect: boolean;
   calendar_sources: CalendarSourceStatus[];
   busyCount: number;
 }
