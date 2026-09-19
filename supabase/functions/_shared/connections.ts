@@ -109,3 +109,90 @@ export async function pruneSupersededConnections(
     console.error("pruneSupersededConnections failed (connection itself is fine)", err);
   }
 }
+
+/**
+ * How close together two callbacks must be to count as one attempt seen
+ * twice. A browser or network retry lands within a second or two, while a
+ * person connecting a second account has to work through the provider's
+ * consent screen again, which takes far longer than this.
+ */
+export const DUPLICATE_CALLBACK_WINDOW_MS = 30_000;
+
+/** True if the failure is a provider refusing an authorization code it already handed out. */
+export function isCodeReuseFailure(failure: unknown): boolean {
+  const message = String(failure);
+  return /token exchange failed/i.test(message) && message.includes("invalid_grant");
+}
+
+/**
+ * Decide whether a failed callback is just the second copy of one that worked.
+ *
+ * An authorization code can be redeemed once. If the same redirect reaches us
+ * twice, the first request succeeds and the second is refused with
+ * `invalid_grant`, which would otherwise be stored as a failed connection even
+ * though the account connected fine. So a code-reuse failure is a duplicate
+ * when another attempt for the same account started within the window.
+ * `otherAttemptTimes` are the creation times of those other attempts.
+ */
+export function isRepeatedCallback(opts: {
+  failure: unknown;
+  attemptedAt: string;
+  otherAttemptTimes: string[];
+}): boolean {
+  if (!isCodeReuseFailure(opts.failure)) return false;
+  const attempted = Date.parse(opts.attemptedAt);
+  return opts.otherAttemptTimes.some(
+    (t) => Math.abs(Date.parse(t) - attempted) <= DUPLICATE_CALLBACK_WINDOW_MS,
+  );
+}
+
+/**
+ * Call from an OAuth callback's catch block. If the failure turns out to be a
+ * duplicate of an attempt that worked (or is still working), delete this
+ * attempt's row and return true, so the caller can send the user to the
+ * success message instead of showing an error. Returns false for anything
+ * else. Never throws: on any trouble it says "not a duplicate" and the caller
+ * records the failure as before.
+ *
+ * Other attempts still `pending` count too. The duplicate fails at once, while
+ * the original is still fetching calendars and hasn't reached `connected` yet.
+ */
+export async function discardIfRepeatedCallback(
+  db: ReturnType<typeof supabaseAdmin>,
+  opts: {
+    connection: { id: string; created_at: string };
+    profileId: string;
+    provider: "google" | "outlook";
+    failure: unknown;
+  },
+): Promise<boolean> {
+  if (!isCodeReuseFailure(opts.failure)) return false; // skip the query for ordinary failures
+  try {
+    const created = Date.parse(opts.connection.created_at);
+    const { data, error } = await db
+      .from("calendar_connections")
+      .select("created_at")
+      .eq("profile_id", opts.profileId)
+      .eq("provider", opts.provider)
+      .in("status", ["pending", "connected"])
+      .neq("id", opts.connection.id)
+      .gte("created_at", new Date(created - DUPLICATE_CALLBACK_WINDOW_MS).toISOString())
+      .lte("created_at", new Date(created + DUPLICATE_CALLBACK_WINDOW_MS).toISOString());
+    if (error) throw error;
+
+    const duplicate = isRepeatedCallback({
+      failure: opts.failure,
+      attemptedAt: opts.connection.created_at,
+      otherAttemptTimes: (data ?? []).map((r: { created_at: string }) => r.created_at),
+    });
+    if (!duplicate) return false;
+
+    const { error: delErr } = await db.from("calendar_connections").delete().eq("id", opts.connection.id);
+    if (delErr) throw delErr;
+    console.log(`Ignored a repeated ${opts.provider} callback (its one-time code was already used)`);
+    return true;
+  } catch (err) {
+    console.error("discardIfRepeatedCallback failed (treating as a real failure)", err);
+    return false;
+  }
+}

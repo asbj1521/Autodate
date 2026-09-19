@@ -9,7 +9,7 @@
  * needed.
  */
 import { exchangeCodeForTokens, listCalendars, queryFreeBusy } from "../_shared/google.ts";
-import { pruneSupersededConnections } from "../_shared/connections.ts";
+import { discardIfRepeatedCallback, pruneSupersededConnections } from "../_shared/connections.ts";
 import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
 import { verifyState } from "../_shared/state.ts";
 
@@ -155,6 +155,13 @@ Deno.serve(async (req) => {
     return redirectToProfile(frontendUrl, { connected: "google" });
   } catch (err) {
     console.error("Google OAuth callback failed", err);
+    // The same redirect can reach us twice (a browser or network retry). The
+    // provider hands its one-time code to the first request and refuses the
+    // second with invalid_grant, which is no failure at all: the account
+    // connected. Drop this duplicate attempt instead of recording an error.
+    if (await discardIfRepeatedCallback(db, { connection, profileId, provider: "google", failure: err })) {
+      return redirectToProfile(frontendUrl, { connected: "google" });
+    }
     await db
       .from("calendar_connections")
       .update({ status: "error", error_message: String(err) })
