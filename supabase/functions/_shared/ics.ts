@@ -135,7 +135,8 @@ export function parseBusyIntervals(raw: string, windowStart: Date, windowEnd: Da
   const events: InstanceType<typeof ICAL.Event>[] = [];
   const exceptions: InstanceType<typeof ICAL.Event>[] = [];
   for (const vevent of root.getAllSubcomponents("vevent")) {
-    const tzid = vevent.getFirstProperty("dtstart")?.getParameter("tzid");
+    // TZID is single-valued; the library types it as string | string[].
+    const tzid = vevent.getFirstProperty("dtstart")?.getParameter("tzid") as string | undefined;
     if (tzid && !knownZones.has(tzid)) {
       throw new IcsError(
         `This feed uses the time zone "${tzid}" without defining it, so event times can't be placed reliably.`,

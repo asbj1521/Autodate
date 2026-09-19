@@ -415,6 +415,13 @@ verify_jwt = false
 # only ever stored in calendar_secrets; the function refuses non-public URLs.
 verify_jwt = false
 
+[functions.calendar-add-apple]
+# Called from the SPA with the publishable key, like calendar-add-ics (no
+# Supabase Auth yet). The app-specific password it receives is only ever
+# stored encrypted in calendar_secrets (key: CALDAV_ENCRYPTION_KEY), and is
+# only ever sent to icloud.com hosts.
+verify_jwt = false
+
 [functions.calendar-disconnect]
 # Same situation as calendar-status: called from the SPA with the
 # publishable key because there's no Supabase Auth yet. It only deletes a

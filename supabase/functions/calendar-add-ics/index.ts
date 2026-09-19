@@ -8,8 +8,9 @@
  *
  * Flow: validate + fetch the feed, strip it down to timing lines and expand
  * it into busy intervals (all in _shared/ics.ts), then store the connection,
- * its one calendar source, the secret link, and the busy blocks. The feed is
- * fully processed before anything is written, so a bad link leaves no rows.
+ * its one calendar source, the secret link, and the busy blocks (see
+ * _shared/storeCalendars.ts). The feed is fully processed before anything is
+ * written, so a bad link leaves no rows.
  * Adding the same link again replaces the earlier connection, which is also
  * how a link is refreshed until there's a background sync job.
  *
@@ -19,11 +20,11 @@
 import { corsHeaders } from "../_shared/cors.ts";
 import { carryOverPurposes } from "../_shared/connections.ts";
 import { assertSafeFeedUrl, fetchFeedText, IcsError, parseBusyIntervals } from "../_shared/ics.ts";
+import { storeCalendars } from "../_shared/storeCalendars.ts";
 import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
 
 // How far ahead to sync. Same window as the Google and Outlook callbacks.
 const SYNC_MONTHS_AHEAD = 12;
-const BUSY_INSERT_CHUNK = 500;
 const MAX_NAME_LENGTH = 80;
 
 /** Drop ASCII control characters (newlines, tabs, NUL, DEL, ...) from user text. */
@@ -85,51 +86,18 @@ Deno.serve(async (req) => {
   const normalizedUrl = feedUrl.toString();
   const db = supabaseAdmin();
 
-  const { data: connection, error: insertErr } = await db
-    .from("calendar_connections")
-    .insert({ profile_id: profileId, provider: "ics", status: "pending", account_label: label })
-    .select()
-    .single();
-  if (insertErr || !connection) {
-    console.error("Failed to create calendar_connections row", insertErr);
-    return json({ error: "Couldn't save the connection." }, 500);
-  }
-
+  // A feed is one calendar, so it gets a single source.
+  let connectionId: string;
   try {
-    const { error: secretErr } = await db
-      .from("calendar_secrets")
-      .insert({ connection_id: connection.id, ics_url: normalizedUrl });
-    if (secretErr) throw secretErr;
-
-    // A feed is one calendar, so it gets a single source.
-    const { data: source, error: sourceErr } = await db
-      .from("calendar_sources")
-      .insert({ connection_id: connection.id, external_calendar_id: "ics", display_name: label })
-      .select()
-      .single();
-    if (sourceErr || !source) throw sourceErr ?? new Error("No calendar_sources row returned");
-
-    const rows = parsed.intervals.map((iv) => ({
-      source_id: source.id,
-      start_at: iv.start,
-      end_at: iv.end,
+    ({ connectionId } = await storeCalendars(db, {
+      profileId,
+      provider: "ics",
+      accountLabel: label,
+      secrets: { ics_url: normalizedUrl },
+      calendars: [{ externalId: "ics", displayName: label, intervals: parsed.intervals }],
     }));
-    for (let i = 0; i < rows.length; i += BUSY_INSERT_CHUNK) {
-      const { error: busyErr } = await db
-        .from("calendar_busy_cache")
-        .insert(rows.slice(i, i + BUSY_INSERT_CHUNK));
-      if (busyErr) throw busyErr;
-    }
-
-    const { error: updateErr } = await db
-      .from("calendar_connections")
-      .update({ status: "connected", last_synced_at: new Date().toISOString() })
-      .eq("id", connection.id);
-    if (updateErr) throw updateErr;
   } catch (err) {
-    console.error("calendar-add-ics failed while saving; rolling back", err);
-    // Deleting the connection cascades to whatever was inserted so far.
-    await db.from("calendar_connections").delete().eq("id", connection.id);
+    console.error("calendar-add-ics failed while saving", err);
     return json({ error: "Couldn't save the calendar." }, 500);
   }
 
@@ -141,16 +109,16 @@ Deno.serve(async (req) => {
       .eq("ics_url", normalizedUrl)
       .eq("calendar_connections.profile_id", profileId)
       .eq("calendar_connections.provider", "ics")
-      .neq("connection_id", connection.id);
+      .neq("connection_id", connectionId);
     const oldIds = (older ?? []).map((r: { connection_id: string }) => r.connection_id);
     if (oldIds.length > 0) {
       // Keep any category the user set on the link's calendar.
-      await carryOverPurposes(db, oldIds, connection.id);
+      await carryOverPurposes(db, oldIds, connectionId);
       await db.from("calendar_connections").delete().in("id", oldIds);
     }
   } catch (err) {
     console.error("Failed to remove superseded ICS connection (new one is fine)", err);
   }
 
-  return json({ connectionId: connection.id, label, busyBlocks: parsed.intervals.length });
+  return json({ connectionId, label, busyBlocks: parsed.intervals.length });
 });
