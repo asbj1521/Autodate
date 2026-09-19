@@ -10,8 +10,9 @@
  * returns non-secret fields (never touches calendar_secrets).
  *
  * Called via fetch() from the SPA, unlike the OAuth functions, so this one
- * needs CORS handling.
+ * needs CORS handling. Answers only for the signed-in caller (_shared/auth.ts).
  */
+import { callerId } from "../_shared/auth.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
 
@@ -20,16 +21,14 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  const url = new URL(req.url);
-  const profileId = url.searchParams.get("profileId");
+  const db = supabaseAdmin();
+  const profileId = await callerId(req, db);
   if (!profileId) {
-    return new Response(JSON.stringify({ error: "Missing profileId" }), {
-      status: 400,
+    return new Response(JSON.stringify({ error: "Please sign in again." }), {
+      status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-
-  const db = supabaseAdmin();
 
   const { data: connections, error } = await db
     .from("calendar_connections")

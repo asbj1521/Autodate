@@ -7,7 +7,6 @@
  */
 import { queryOptions } from "@tanstack/react-query";
 
-import { CURRENT_USER_ID } from "@/api/currentUser";
 import { callFunction } from "@/lib/supabaseFunctions";
 import type { CalendarProvider } from "@/types";
 
@@ -31,8 +30,6 @@ export interface CalendarConnectionStatus {
   busyCount: number;
 }
 
-export const CALENDAR_STATUS_KEY = ["calendar-status", CURRENT_USER_ID];
-
 /**
  * Backed by the database via the calendar-status Edge Function, so "connected"
  * is a real, persistent fact rather than a banner that shows up once and
@@ -42,14 +39,17 @@ export const CALENDAR_STATUS_KEY = ["calendar-status", CURRENT_USER_ID];
  * answer is held for a while: connecting and disconnecting both refetch
  * explicitly, which is what actually changes it. Without that, every visit to
  * the page sat on a spinner waiting to be told what it already knew.
+ *
+ * `userId` only keys the cache, so one person's answer is never served to the
+ * next; the function itself learns who is asking from the login token.
  */
-export function calendarStatusQuery() {
+export function calendarStatusQuery(userId: string) {
   return queryOptions({
-    queryKey: CALENDAR_STATUS_KEY,
+    queryKey: ["calendar-status", userId],
     queryFn: async (): Promise<CalendarConnectionStatus[]> => {
       const body = await callFunction<{
         connections?: CalendarConnectionStatus[];
-      }>("calendar-status", { params: { profileId: CURRENT_USER_ID } });
+      }>("calendar-status");
       return body.connections ?? [];
     },
     staleTime: 60_000,

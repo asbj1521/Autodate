@@ -1,17 +1,22 @@
 /**
- * Step 1 of Google's OAuth flow: build the consent-screen URL and redirect
- * the browser there.
+ * Step 1 of Google's OAuth flow: build the consent-screen URL for the
+ * signed-in person's browser to go to.
  *
- * Reached by a plain top-level navigation from the profile page
- * (`window.location.href = .../oauth-google-start?profileId=...`), not a
- * fetch() call, so this never needs CORS handling, only Google's redirect
- * back to oauth-google-callback does the same.
+ * Called with fetch() by the signed-in person, not by opening a link: a
+ * plain navigation can't carry their login, and the login is what says whose
+ * calendar this becomes. So instead of redirecting, this answers with the
+ * consent-screen URL and the page sends the browser there. The caller's id
+ * travels to oauth-google-callback inside the signed `state`, which is why the
+ * callback can trust it without a login of its own.
  *
  * Scopes are deliberately minimal: freebusy (busy/free intervals, never
  * event titles) and calendarlist.readonly (calendar *names*, so the profile
  * page can let the user label each one's purpose, see the calendar_sources
  * table). Matches the privacy design already documented in src/types/index.ts.
  */
+import { callerId } from "../_shared/auth.ts";
+import { corsHeaders } from "../_shared/cors.ts";
+import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
 import { signState } from "../_shared/state.ts";
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -20,25 +25,30 @@ const SCOPES = [
   "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
 ].join(" ");
 
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
 Deno.serve(async (req) => {
-  const url = new URL(req.url);
-  // No real multi-user auth yet: profileId is passed through as a plain
-  // query param, matching CURRENT_USER_ID in the frontend's mock data.
-  // Once real accounts exist, derive this from the caller's session instead
-  // of trusting a query param.
-  const profileId = url.searchParams.get("profileId");
-  if (!profileId) {
-    return new Response("Missing profileId", { status: 400 });
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
   }
+  if (req.method !== "POST") {
+    return json({ error: "Use POST" }, 405);
+  }
+
+  const profileId = await callerId(req, supabaseAdmin());
+  if (!profileId) return json({ error: "Please sign in again." }, 401);
 
   const clientId = Deno.env.get("GOOGLE_OAUTH_CLIENT_ID");
   const stateSecret = Deno.env.get("OAUTH_STATE_SECRET");
   const functionsBaseUrl = Deno.env.get("FUNCTIONS_BASE_URL");
   if (!clientId || !stateSecret || !functionsBaseUrl) {
-    return new Response(
-      "Server is missing GOOGLE_OAUTH_CLIENT_ID / OAUTH_STATE_SECRET / FUNCTIONS_BASE_URL",
-      { status: 500 },
-    );
+    console.error("Server is missing GOOGLE_OAUTH_CLIENT_ID / OAUTH_STATE_SECRET / FUNCTIONS_BASE_URL");
+    return json({ error: "Google connections aren't set up on the server yet." }, 500);
   }
 
   const state = await signState(
@@ -60,5 +70,5 @@ Deno.serve(async (req) => {
   authUrl.searchParams.set("prompt", "select_account consent");
   authUrl.searchParams.set("state", state);
 
-  return Response.redirect(authUrl.toString(), 302);
+  return json({ url: authUrl.toString() });
 });

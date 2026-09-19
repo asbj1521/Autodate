@@ -7,10 +7,12 @@
  * titles anywhere in this data by design (see the calendar_integrations
  * migration and each adapter), so none can leak from here.
  *
- * Called via fetch() from the SPA with the publishable key, like
- * calendar-status; RLS blocks direct table access, so this service-role
- * function is the read path. Never touches calendar_secrets.
+ * Called via fetch() from the SPA with the signed-in person's token, like
+ * calendar-status, and answers only for them. RLS blocks direct table access,
+ * so this service-role function is the read path. Never touches
+ * calendar_secrets.
  */
+import { callerId } from "../_shared/auth.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
 
@@ -48,10 +50,8 @@ Deno.serve(async (req) => {
   }
 
   const params = new URL(req.url).searchParams;
-  const profileId = params.get("profileId");
   const from = new Date(params.get("from") ?? "");
   const to = new Date(params.get("to") ?? "");
-  if (!profileId) return json({ error: "Missing profileId" }, 400);
   if (isNaN(from.getTime()) || isNaN(to.getTime()) || to <= from) {
     return json({ error: "from and to must be ISO timestamps with to after from" }, 400);
   }
@@ -60,6 +60,8 @@ Deno.serve(async (req) => {
   }
 
   const db = supabaseAdmin();
+  const profileId = await callerId(req, db);
+  if (!profileId) return json({ error: "Please sign in again." }, 401);
 
   const { data: sources, error: sourcesErr } = await db
     .from("calendar_sources")

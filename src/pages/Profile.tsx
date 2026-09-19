@@ -10,12 +10,11 @@ import ProviderCard, { type ProviderMeta } from "@/components/ProviderCard";
 import TopNav from "@/components/TopNav";
 import { displayName, useAuth } from "@/context/auth";
 import { avatarColor } from "@/lib/avatar";
-import { CURRENT_USER_ID } from "@/api/currentUser";
 import {
   calendarStatusQuery,
   type CalendarConnectionStatus,
 } from "@/api/calendarStatus";
-import { callFunction, SUPABASE_FUNCTIONS_URL } from "@/lib/supabaseFunctions";
+import { callFunction } from "@/lib/supabaseFunctions";
 import { cn } from "@/lib/utils";
 import type { CalendarProvider } from "@/types";
 
@@ -96,12 +95,13 @@ export default function Profile() {
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<{ id: string; message: string } | null>(null);
+  const [connectError, setConnectError] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const {
     data: connections,
     isPending: statusPending,
     refetch: refetchStatus,
-  } = useQuery(calendarStatusQuery());
+  } = useQuery(calendarStatusQuery(user.id));
 
   // The OAuth callbacks redirect back here with ?connected=<provider> or
   // ?error=<provider>:<reason>. Read it once, show a banner, then strip the
@@ -119,11 +119,20 @@ export default function Profile() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectedParam, errorParam]);
 
-  const handleConnect = (provider: CalendarProvider) => {
+  const handleConnect = async (provider: CalendarProvider) => {
     if (provider === "google" || provider === "outlook") {
-      window.location.assign(
-        `${SUPABASE_FUNCTIONS_URL}/oauth-${provider}-start?profileId=${encodeURIComponent(CURRENT_USER_ID)}`,
-      );
+      // Ask for the consent-screen link with our login attached (a plain link
+      // can't carry it), then go there. The server ties the link to us.
+      setConnectError(null);
+      try {
+        const { url } = await callFunction<{ url: string }>(`oauth-${provider}-start`, {
+          body: {},
+          errorMessage: "Couldn't start connecting",
+        });
+        window.location.assign(url);
+      } catch (err) {
+        setConnectError(err instanceof Error ? err.message : "Couldn't start connecting");
+      }
       return;
     }
     if (provider === "ics") {
@@ -145,7 +154,7 @@ export default function Profile() {
       const body = await callFunction<{ label: string; busyBlocks: number }>(
         "calendar-add-ics",
         {
-          body: { profileId: CURRENT_USER_ID, url, name },
+          body: { url, name },
           errorMessage: "Couldn't add the link",
         },
       );
@@ -167,7 +176,7 @@ export default function Profile() {
     setRemoveError(null);
     try {
       await callFunction("calendar-disconnect", {
-        body: { profileId: CURRENT_USER_ID, connectionId },
+        body: { connectionId },
         errorMessage: "Couldn't remove the account",
       });
       setConfirmRemoveId(null);
@@ -194,7 +203,7 @@ export default function Profile() {
         busyBlocks: number;
         skippedEvents: number;
       }>("calendar-add-apple", {
-        body: { profileId: CURRENT_USER_ID, username, password },
+        body: { username, password },
         errorMessage: "Couldn't connect to iCloud",
       });
       const skipped =
@@ -255,6 +264,13 @@ export default function Profile() {
           )}
         </AnimatePresence>
 
+        {connectError && (
+          <div className="mt-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+            <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{connectError}</span>
+          </div>
+        )}
+
         {/* Who this is, in one line. The overview button lives here so the
             section below can spend its space on the calendars themselves. */}
         <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -307,7 +323,7 @@ export default function Profile() {
                   confirmRemoveId={confirmRemoveId}
                   removingId={removingId}
                   removeError={removeError}
-                  onConnect={() => handleConnect(provider.id)}
+                  onConnect={() => void handleConnect(provider.id)}
                   onAskRemove={(id) => {
                     setRemoveError(null);
                     setConfirmRemoveId(id);

@@ -12,9 +12,9 @@
  * is encrypted (see _shared/secretBox.ts) before it is stored. Re-adding the
  * same account replaces the old connection and keeps its calendar categories.
  *
- * Called with the publishable key like the other functions, so there is no
- * real caller identity yet (see the profile_id notes in the migration).
+ * Called with the signed-in person's token; the account is stored as theirs.
  */
+import { callerId } from "../_shared/auth.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { discoverCalendars, CalDavError, fetchEventDocuments, mapPool } from "../_shared/caldav.ts";
 import { pruneSupersededConnections } from "../_shared/connections.ts";
@@ -49,18 +49,21 @@ Deno.serve(async (req) => {
     return json({ error: "Use POST" }, 405);
   }
 
-  let payload: { profileId?: unknown; username?: unknown; password?: unknown };
+  // Checked before anything else, so no one can make us log in to iCloud
+  // with a password without being signed in themselves.
+  const db = supabaseAdmin();
+  const profileId = await callerId(req, db);
+  if (!profileId) return json({ error: "Please sign in again." }, 401);
+
+  let payload: { username?: unknown; password?: unknown };
   try {
     payload = await req.json();
   } catch {
     return json({ error: "Body must be JSON" }, 400);
   }
-  const { profileId, username: rawUsername, password: rawPassword } = payload;
-  if (
-    typeof profileId !== "string" || !profileId ||
-    typeof rawUsername !== "string" || typeof rawPassword !== "string"
-  ) {
-    return json({ error: "profileId, username and password are required" }, 400);
+  const { username: rawUsername, password: rawPassword } = payload;
+  if (typeof rawUsername !== "string" || typeof rawPassword !== "string") {
+    return json({ error: "username and password are required" }, 400);
   }
   const username = rawUsername.trim();
   // Apple shows app-specific passwords with dashes and people paste stray spaces.
@@ -117,7 +120,6 @@ Deno.serve(async (req) => {
     return json({ error: "Couldn't read that iCloud account." }, 500);
   }
 
-  const db = supabaseAdmin();
   let connectionId: string;
   try {
     ({ connectionId } = await storeCalendars(db, {

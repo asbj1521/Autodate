@@ -37,7 +37,7 @@ export default function TopNav({ wide = false }: { wide?: boolean }) {
     // Signed out, the link leads to the sign-in page, so there's nothing to warm.
     if (onProfile || !user) return;
     void import("@/pages/Profile");
-    void queryClient.prefetchQuery(calendarStatusQuery());
+    void queryClient.prefetchQuery(calendarStatusQuery(user.id));
   };
 
   return (

@@ -38,7 +38,7 @@ async function hmacKey(secret: string): Promise<CryptoKey> {
 }
 
 export interface OAuthStatePayload {
-  /** Which profile is connecting. Plain text until real auth exists. */
+  /** The signed-in user connecting (auth.users id), verified in the start function. */
   profileId: string;
   /** Random per-request value; not currently checked against anything, but
    * keeps two states for the same profile from ever being identical. */

@@ -16,7 +16,7 @@ import {
 
 import CalendarListPanel from "@/components/CalendarListPanel";
 import TopNav from "@/components/TopNav";
-import { CURRENT_USER_ID } from "@/api/currentUser";
+import { useAuth } from "@/context/auth";
 import {
   buildMonthLayout,
   calendarColors,
@@ -68,7 +68,6 @@ const MAX_ROWS_PER_CELL = 3;
 function fetchOverview(from: Date, to: Date): Promise<OverviewData> {
   return callFunction<OverviewData>("calendar-busy", {
     params: {
-      profileId: CURRENT_USER_ID,
       from: from.toISOString(),
       to: to.toISOString(),
     },
@@ -89,6 +88,7 @@ function fetchOverview(from: Date, to: Date): Promise<OverviewData> {
  */
 export default function CalendarOverview() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [month, setMonth] = useState(() => {
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
@@ -100,7 +100,7 @@ export default function CalendarOverview() {
   const gridDays = useMemo(() => layout.weeks.flat(), [layout]);
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ["calendar-busy", CURRENT_USER_ID, dayKey(layout.from)],
+    queryKey: ["calendar-busy", user.id, dayKey(layout.from)],
     queryFn: () => fetchOverview(layout.from, layout.to),
     placeholderData: keepPreviousData, // no flash of emptiness when changing month
   });
@@ -108,7 +108,7 @@ export default function CalendarOverview() {
   const setPurpose = useMutation({
     mutationFn: (v: { calendarId: string; purpose: CalendarPurpose | null }) =>
       callFunction("calendar-set-purpose", {
-        body: { profileId: CURRENT_USER_ID, ...v },
+        body: v,
         errorMessage: "Couldn't save the category",
       }),
     onSuccess: async () => {

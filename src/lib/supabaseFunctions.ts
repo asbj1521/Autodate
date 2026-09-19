@@ -2,17 +2,29 @@
  * Where the Supabase Edge Functions live, and how to call them.
  *
  * The base URL is derived from the same project URL the rest of the app uses
- * rather than a second env var to keep in sync. There is no user session yet,
- * so calls go out with the publishable key (see the profile_id notes in the
- * migration).
+ * rather than a second env var to keep in sync. Every call carries the
+ * signed-in person's access token, which is how a function knows whose
+ * calendars it is looking at: nothing in the request body says so any more.
  */
+import { supabase } from "@/lib/supabase";
 
 export const SUPABASE_FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
-export const FUNCTION_HEADERS = {
-  apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-  Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-};
+const PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+/**
+ * The publishable key identifies the app; the access token identifies the
+ * person. getSession() hands back a token that is still valid, refreshing it
+ * first if it was about to expire. Signed out, the key stands in for the token
+ * and the function answers 401.
+ */
+async function functionHeaders(): Promise<Record<string, string>> {
+  const { data } = await supabase.auth.getSession();
+  return {
+    apikey: PUBLISHABLE_KEY,
+    Authorization: `Bearer ${data.session?.access_token ?? PUBLISHABLE_KEY}`,
+  };
+}
 
 interface CallOptions {
   /** Query-string parameters; used by the read-only GET endpoints. */
@@ -40,13 +52,14 @@ export async function callFunction<T>(
     url.searchParams.set(key, value);
   }
 
+  const headers = await functionHeaders();
   const res = await fetch(
     url,
     body === undefined
-      ? { headers: FUNCTION_HEADERS }
+      ? { headers }
       : {
           method: "POST",
-          headers: { ...FUNCTION_HEADERS, "Content-Type": "application/json" },
+          headers: { ...headers, "Content-Type": "application/json" },
           body: JSON.stringify(body),
         },
   );

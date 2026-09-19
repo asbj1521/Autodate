@@ -14,9 +14,9 @@
  * Adding the same link again replaces the earlier connection, which is also
  * how a link is refreshed until there's a background sync job.
  *
- * Called with the publishable key like calendar-status, so there is no real
- * caller identity yet (see the profile_id notes in the migration).
+ * Called with the signed-in person's token; the link is stored as theirs.
  */
+import { callerId } from "../_shared/auth.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { carryOverPurposes } from "../_shared/connections.ts";
 import { assertSafeFeedUrl, fetchFeedText, IcsError, parseBusyIntervals } from "../_shared/ics.ts";
@@ -52,15 +52,19 @@ Deno.serve(async (req) => {
     return json({ error: "Use POST" }, 405);
   }
 
-  let payload: { profileId?: unknown; url?: unknown; name?: unknown };
+  const db = supabaseAdmin();
+  const profileId = await callerId(req, db);
+  if (!profileId) return json({ error: "Please sign in again." }, 401);
+
+  let payload: { url?: unknown; name?: unknown };
   try {
     payload = await req.json();
   } catch {
     return json({ error: "Body must be JSON" }, 400);
   }
-  const { profileId, url: rawUrl, name: rawName } = payload;
-  if (typeof profileId !== "string" || !profileId || typeof rawUrl !== "string" || !rawUrl) {
-    return json({ error: "profileId and url are required" }, 400);
+  const { url: rawUrl, name: rawName } = payload;
+  if (typeof rawUrl !== "string" || !rawUrl) {
+    return json({ error: "url is required" }, 400);
   }
   const name =
     typeof rawName === "string"
@@ -84,7 +88,6 @@ Deno.serve(async (req) => {
 
   const label = name || parsed.calendarName || feedUrl.hostname;
   const normalizedUrl = feedUrl.toString();
-  const db = supabaseAdmin();
 
   // A feed is one calendar, so it gets a single source.
   let connectionId: string;

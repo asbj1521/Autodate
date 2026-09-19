@@ -371,8 +371,9 @@ authorization_url_path = "/oauth/consent"
 allow_dynamic_registration = false
 
 [functions.oauth-google-start]
-# Reached by a plain browser navigation (redirect into Google's consent
-# screen), not an authenticated Supabase client call.
+# Called by the signed-in app with fetch(); checks the login itself in code
+# (_shared/auth.ts). The gateway check stays off because the publishable key
+# is not a JWT.
 verify_jwt = false
 
 [functions.oauth-google-callback]
@@ -382,8 +383,9 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.oauth-outlook-start]
-# Reached by a plain browser navigation (redirect into Microsoft's consent
-# screen), not an authenticated Supabase client call.
+# Called by the signed-in app with fetch(); checks the login itself in code
+# (_shared/auth.ts). The gateway check stays off because the publishable key
+# is not a JWT.
 verify_jwt = false
 
 [functions.oauth-outlook-callback]
@@ -393,39 +395,34 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.calendar-status]
-# Called from the SPA with the publishable key, not a real user session:
-# there's no Supabase Auth yet (see profile_id notes in the migration).
-# Only ever returns non-secret status fields.
+# Checks the caller's login in code (_shared/auth.ts) and answers only for
+# them. The gateway check stays off because the publishable key is not a JWT.
 verify_jwt = false
 
 [functions.calendar-busy]
-# Read-only, called from the SPA with the publishable key like
-# calendar-status. Returns block timestamps and calendar names/categories,
-# never event titles (none are stored) and never secrets.
+# Checks the caller's login in code (_shared/auth.ts) and answers only for
+# them. Returns block times and calendar names/categories, never secrets.
 verify_jwt = false
 
 [functions.calendar-set-purpose]
-# Same situation as calendar-disconnect: called from the SPA with the
-# publishable key, guarded by the calendar belonging to the given profileId.
+# Checks the caller's login in code (_shared/auth.ts); only their own
+# calendars can be changed.
 verify_jwt = false
 
 [functions.calendar-add-ics]
-# Called from the SPA with the publishable key, like calendar-status (no
-# Supabase Auth yet). The feed link it receives is treated as a secret and
-# only ever stored in calendar_secrets; the function refuses non-public URLs.
+# Checks the caller's login in code (_shared/auth.ts). The feed link is
+# stored only in calendar_secrets; non-public URLs are refused.
 verify_jwt = false
 
 [functions.calendar-add-apple]
-# Called from the SPA with the publishable key, like calendar-add-ics (no
-# Supabase Auth yet). The app-specific password it receives is only ever
-# stored encrypted in calendar_secrets (key: CALDAV_ENCRYPTION_KEY), and is
-# only ever sent to icloud.com hosts.
+# Checks the caller's login in code (_shared/auth.ts). The app-specific
+# password is only ever stored encrypted in calendar_secrets
+# (key: CALDAV_ENCRYPTION_KEY).
 verify_jwt = false
 
 [functions.calendar-disconnect]
-# Same situation as calendar-status: called from the SPA with the
-# publishable key because there's no Supabase Auth yet. It only deletes a
-# connection when the profileId matches the row's owner.
+# Checks the caller's login in code (_shared/auth.ts); only their own
+# connections can be removed.
 verify_jwt = false
 
 [edge_runtime]
