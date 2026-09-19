@@ -2,6 +2,8 @@ import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
+import RequireAuth from '@/components/RequireAuth'
+import AuthProvider from '@/context/AuthProvider'
 import FindDate from '@/pages/FindDate'
 
 /**
@@ -13,23 +15,42 @@ import FindDate from '@/pages/FindDate'
  */
 const Profile = lazy(() => import('@/pages/Profile'))
 const CalendarOverview = lazy(() => import('@/pages/CalendarOverview'))
+const SignIn = lazy(() => import('@/pages/SignIn'))
 
 const queryClient = new QueryClient()
 
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        {/* Plain background rather than a spinner: these chunks are small, and
-            a flash of "Loading…" would read as slower than a beat of nothing. */}
-        <Suspense fallback={<div className="min-h-screen bg-background" />}>
-          <Routes>
-            <Route path="/" element={<FindDate />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="/calendar-overview" element={<CalendarOverview />} />
-          </Routes>
-        </Suspense>
-      </BrowserRouter>
+      <AuthProvider>
+        <BrowserRouter>
+          {/* Plain background rather than a spinner: these chunks are small, and
+              a flash of "Loading…" would read as slower than a beat of nothing. */}
+          <Suspense fallback={<div className="min-h-screen bg-background" />}>
+            <Routes>
+              <Route path="/" element={<FindDate />} />
+              <Route path="/sign-in" element={<SignIn />} />
+              {/* Everything tied to one person's calendars needs a login. */}
+              <Route
+                path="/profile"
+                element={
+                  <RequireAuth>
+                    <Profile />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/calendar-overview"
+                element={
+                  <RequireAuth>
+                    <CalendarOverview />
+                  </RequireAuth>
+                }
+              />
+            </Routes>
+          </Suspense>
+        </BrowserRouter>
+      </AuthProvider>
     </QueryClientProvider>
   )
 }

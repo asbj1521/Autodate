@@ -1,8 +1,9 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { User } from "lucide-react";
 
 import { calendarStatusQuery } from "@/api/calendarStatus";
+import { useAuth } from "@/context/auth";
 import { cn } from "@/lib/utils";
 
 /**
@@ -13,7 +14,14 @@ import { cn } from "@/lib/utils";
 export default function TopNav({ wide = false }: { wide?: boolean }) {
   const { pathname } = useLocation();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const { user, loading, signOut } = useAuth();
   const onProfile = pathname === "/profile";
+
+  async function handleSignOut() {
+    await signOut();
+    navigate("/");
+  }
 
   /**
    * Warm both halves of the profile page as soon as someone shows intent to go
@@ -26,7 +34,8 @@ export default function TopNav({ wide = false }: { wide?: boolean }) {
    * fetches that exact chunk rather than a second copy.
    */
   const prefetchProfile = () => {
-    if (onProfile) return;
+    // Signed out, the link leads to the sign-in page, so there's nothing to warm.
+    if (onProfile || !user) return;
     void import("@/pages/Profile");
     void queryClient.prefetchQuery(calendarStatusQuery());
   };
@@ -59,9 +68,28 @@ export default function TopNav({ wide = false }: { wide?: boolean }) {
           <User className="h-4 w-4" />
           Profile
         </Link>
-        <a href="#" className="transition hover:text-foreground">
-          Sign in
-        </a>
+        {/* Nothing until the session is known, so it never flickers from
+            "Sign in" to "Sign out" on load. */}
+        {!loading &&
+          (user ? (
+            <button
+              type="button"
+              onClick={() => void handleSignOut()}
+              className="transition hover:text-foreground"
+            >
+              Sign out
+            </button>
+          ) : (
+            <Link
+              to="/sign-in"
+              className={cn(
+                "transition hover:text-foreground",
+                pathname === "/sign-in" && "text-foreground",
+              )}
+            >
+              Sign in
+            </Link>
+          ))}
       </div>
     </nav>
   );

@@ -6,9 +6,9 @@ import { CalendarDays, CheckCircle2, ChevronLeft, XCircle } from "lucide-react";
 
 import AppleCredentialsForm from "@/components/AppleCredentialsForm";
 import IcsLinkForm from "@/components/IcsLinkForm";
-import InfoTip from "@/components/InfoTip";
 import ProviderCard, { type ProviderMeta } from "@/components/ProviderCard";
 import TopNav from "@/components/TopNav";
+import { displayName, useAuth } from "@/context/auth";
 import { avatarColor } from "@/lib/avatar";
 import { CURRENT_USER_ID } from "@/api/currentUser";
 import {
@@ -30,17 +30,6 @@ function attemptsFor(
 ): CalendarConnectionStatus[] {
   return connections?.filter((c) => c.provider === provider) ?? [];
 }
-
-/**
- * Placeholder identity for the single demo account. Real phone-number login
- * and multi-person profiles are a separate, later piece of work; this page
- * just gives the one hardcoded user the rest of the app already assumes
- * (`CURRENT_USER_ID` in mockData) somewhere to live.
- */
-const CURRENT_USER = {
-  name: "Asbjørn Bay",
-  phone: "+45 00 00 00 00",
-};
 
 /**
  * In the same order as the calendar overview's list. The descriptions are what
@@ -89,6 +78,8 @@ const PROVIDERS: ProviderMeta[] = [
  * and show the outcome inline (Apple takes an app-specific password).
  */
 export default function Profile() {
+  const { user } = useAuth();
+  const name = displayName(user);
   const [appleFormOpen, setAppleFormOpen] = useState(false);
   const [appleSubmitting, setAppleSubmitting] = useState(false);
   // Bumped after each successful connect, to remount the form and drop the
@@ -273,17 +264,15 @@ export default function Profile() {
               avatarColor(0),
             )}
           >
-            {CURRENT_USER.name.charAt(0)}
+            {name.charAt(0).toUpperCase()}
           </span>
           <div className="min-w-0">
-            <h1 className="flex items-center gap-1.5 text-lg font-bold leading-tight text-foreground">
-              {CURRENT_USER.name}
-              <InfoTip label="About this profile">
-                Phone-number login and multi-person profiles are coming in a later update. For now
-                this page reflects the one demo account the rest of Autodate uses.
-              </InfoTip>
-            </h1>
-            <p className="text-sm text-muted-foreground">{CURRENT_USER.phone}</p>
+            <h1 className="truncate text-lg font-bold leading-tight text-foreground">{name}</h1>
+            {/* Under a Google name, the email says which account this is; when
+                the email is already the name, it would only repeat it. */}
+            {user?.email && user.email !== name && (
+              <p className="truncate text-sm text-muted-foreground">{user.email}</p>
+            )}
           </div>
           <Link
             to="/calendar-overview"
