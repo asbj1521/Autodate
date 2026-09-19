@@ -262,7 +262,7 @@ export async function fetchFeedText(rawUrl: string): Promise<string> {
       res = await fetch(url, {
         redirect: "manual",
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-        headers: { Accept: "text/calendar, text/plain, */*", "User-Agent": "Autodate/1.0" },
+        headers: { Accept: "text/calendar, text/plain, */*", "User-Agent": "Casy/1.0" },
       });
     } catch (err) {
       console.error("ICS fetch failed", url.hostname, err);

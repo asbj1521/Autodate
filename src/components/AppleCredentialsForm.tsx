@@ -69,8 +69,8 @@ export default function AppleCredentialsForm({
                 <label htmlFor={passwordId}>App-specific password</label>
                 <InfoTip label="About app-specific passwords">
                   Apple has no one-click sign-in for calendars. In Sign-In and Security at
-                  account.apple.com, open App-Specific Passwords and create one for Autodate.
-                  Autodate never sees your main Apple ID password. It only asks Apple for event
+                  account.apple.com, open App-Specific Passwords and create one for Casy.
+                  Casy never sees your main Apple ID password. It only asks Apple for event
                   times, never titles, and stores this password encrypted. You can revoke it at any
                   time in the same place.
                 </InfoTip>

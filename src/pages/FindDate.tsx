@@ -554,7 +554,7 @@ export default function FindDate() {
               Find a time to meet.
             </h1>
             <p className="mt-5 text-lg text-muted-foreground">
-              Autodate syncs everyone's calendars and finds the earliest window
+              Casy syncs everyone's calendars and finds the earliest window
               that works for your whole group — automatically.
             </p>
           </div>

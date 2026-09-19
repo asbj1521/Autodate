@@ -13,6 +13,7 @@ import { exchangeCodeForTokens, listCalendars, queryFreeBusy } from "../_shared/
 import { discardIfRepeatedCallback, pruneSupersededConnections } from "../_shared/connections.ts";
 import { encryptionKeyFromEnv, encryptSecret } from "../_shared/secretBox.ts";
 import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
+import { allowedFrontends, pickFrontend } from "../_shared/frontend.ts";
 import { verifyState } from "../_shared/state.ts";
 
 // How far ahead to sync on first connect. Same window as the Google callback.
@@ -26,7 +27,13 @@ function redirectToProfile(frontendUrl: string, query: Record<string, string>): 
 
 Deno.serve(async (req) => {
   const url = new URL(req.url);
-  const frontendUrl = Deno.env.get("FRONTEND_URL") ?? "http://localhost:8080";
+  // Back to whichever allowed site started the connect, as named in the
+  // signed state. Read first, so even an early error lands on the right site;
+  // a missing or forged state just means the default site.
+  const rawState = url.searchParams.get("state");
+  const secretForReturn = Deno.env.get("OAUTH_STATE_SECRET");
+  const signed = rawState && secretForReturn ? await verifyState(rawState, secretForReturn) : null;
+  const frontendUrl = pickFrontend(signed?.returnTo, allowedFrontends());
 
   const error = url.searchParams.get("error");
   if (error) {

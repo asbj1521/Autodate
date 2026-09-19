@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
+import Footer from '@/components/Footer'
 import RequireAuth from '@/components/RequireAuth'
 import AuthProvider from '@/context/AuthProvider'
 import FindDate from '@/pages/FindDate'
@@ -16,6 +17,7 @@ import FindDate from '@/pages/FindDate'
 const Profile = lazy(() => import('@/pages/Profile'))
 const CalendarOverview = lazy(() => import('@/pages/CalendarOverview'))
 const SignIn = lazy(() => import('@/pages/SignIn'))
+const Privacy = lazy(() => import('@/pages/Privacy'))
 
 const queryClient = new QueryClient()
 
@@ -30,6 +32,7 @@ function App() {
             <Routes>
               <Route path="/" element={<FindDate />} />
               <Route path="/sign-in" element={<SignIn />} />
+              <Route path="/privacy" element={<Privacy />} />
               {/* Everything tied to one person's calendars needs a login. */}
               <Route
                 path="/profile"
@@ -49,6 +52,7 @@ function App() {
               />
             </Routes>
           </Suspense>
+          <Footer />
         </BrowserRouter>
       </AuthProvider>
     </QueryClientProvider>

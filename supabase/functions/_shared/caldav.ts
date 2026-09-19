@@ -97,7 +97,7 @@ async function dav(
           Authorization: authorization,
           "Content-Type": "application/xml; charset=utf-8",
           Depth: String(depth),
-          "User-Agent": "Autodate/1.0",
+          "User-Agent": "Casy/1.0",
         },
         body,
       });

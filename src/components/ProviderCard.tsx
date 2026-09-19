@@ -31,7 +31,7 @@ function RemoveNote({ provider, label }: { provider: CalendarProvider; label: st
     return (
       <>
         Remove {label ?? "this link"}? Its synced busy times and the saved link are deleted from
-        Autodate. The link itself stays valid at its source until you regenerate it there.
+        Casy. The link itself stays valid at its source until you regenerate it there.
       </>
     );
   }
@@ -39,15 +39,15 @@ function RemoveNote({ provider, label }: { provider: CalendarProvider; label: st
     return (
       <>
         Remove {label ?? "this account"}? Its synced busy times and the saved password are deleted
-        from Autodate. To also revoke the password itself, delete it under App-Specific Passwords
+        from Casy. To also revoke the password itself, delete it under App-Specific Passwords
         at account.apple.com.
       </>
     );
   }
   return (
     <>
-      Remove {label ?? "this account"}? Its synced busy times are deleted from Autodate. To also
-      revoke Autodate's access, remove it in that account's connected-apps settings at{" "}
+      Remove {label ?? "this account"}? Its synced busy times are deleted from Casy. To also
+      revoke Casy's access, remove it in that account's connected-apps settings at{" "}
       {provider === "google" ? "Google" : "Microsoft"}.
     </>
   );

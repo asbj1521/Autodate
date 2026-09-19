@@ -45,6 +45,11 @@ export interface OAuthStatePayload {
   nonce: string;
   /** Epoch ms the state was issued, so stale links can be rejected. */
   ts: number;
+  /**
+   * The site the connect started from, to return to afterwards. Signed like
+   * the rest, and still checked against the allowlist (_shared/frontend.ts).
+   */
+  returnTo?: string;
 }
 
 const MAX_STATE_AGE_MS = 10 * 60_000; // 10 minutes: long enough for a consent screen, no longer.

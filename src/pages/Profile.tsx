@@ -49,7 +49,7 @@ const PROVIDERS: ProviderMeta[] = [
     initial: "G",
     badgeClass: "bg-blue-100 text-blue-700",
     description:
-      "Connect with one click. Autodate only ever reads free and busy times, never event details.",
+      "Connect with one click. Casy only ever reads free and busy times, never event details.",
   },
   {
     id: "outlook",
@@ -57,7 +57,7 @@ const PROVIDERS: ProviderMeta[] = [
     initial: "O",
     badgeClass: "bg-sky-100 text-sky-700",
     description:
-      "Connect with one click via your Microsoft account. Autodate only ever reads free and busy times, never event details.",
+      "Connect with one click via your Microsoft account. Casy only ever reads free and busy times, never event details.",
   },
   {
     id: "apple",
@@ -65,7 +65,7 @@ const PROVIDERS: ProviderMeta[] = [
     initial: "A",
     badgeClass: "bg-neutral-200 text-neutral-800",
     description:
-      "Apple has no one-click sign-in for calendars. Generate an app-specific password for Autodate at account.apple.com, then enter your Apple ID email and that password.",
+      "Apple has no one-click sign-in for calendars. Generate an app-specific password for Casy at account.apple.com, then enter your Apple ID email and that password.",
   },
   {
     id: "ics",

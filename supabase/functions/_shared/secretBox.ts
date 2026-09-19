@@ -15,7 +15,11 @@
  */
 
 const VERSION = "v1";
-/** Labels the lookup-hash subkey, so it can never equal the encryption key. */
+/**
+ * Labels the lookup-hash subkey, so it can never equal the encryption key.
+ * Keeps the pre-rebrand name on purpose: changing it changes every hash, and
+ * links added earlier would no longer be recognised when added again.
+ */
 const LOOKUP_KEY_INFO = "autodate lookup hash v1";
 const NONCE_BYTES = 12; // the size AES-GCM is designed around
 const KEY_BYTES = 32; // AES-256

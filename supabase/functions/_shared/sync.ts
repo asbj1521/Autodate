@@ -83,8 +83,8 @@ export async function syncConnection(
     // The stored message is shown to the person, so it is written for them;
     // the provider's own reply (which can be long and technical) goes to the logs.
     const message = needsReconnect
-      ? `${PROVIDER_NAMES[target.provider]} no longer accepts Autodate's access. Reconnect this account.`
-      : `Couldn't reach ${PROVIDER_NAMES[target.provider]}. Autodate will try again within the hour.`;
+      ? `${PROVIDER_NAMES[target.provider]} no longer accepts Casy's access. Reconnect this account.`
+      : `Couldn't reach ${PROVIDER_NAMES[target.provider]}. Casy will try again within the hour.`;
     console.error(`sync of ${target.provider} connection ${target.id} failed`, err);
     await db
       .from("calendar_connections")

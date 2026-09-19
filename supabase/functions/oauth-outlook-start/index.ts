@@ -46,7 +46,14 @@ Deno.serve(async (req) => {
   }
 
   const state = await signState(
-    { profileId, nonce: crypto.randomUUID(), ts: Date.now() },
+    {
+      profileId,
+      nonce: crypto.randomUUID(),
+      ts: Date.now(),
+      // The browser names the site the request came from; the callback only
+      // honours it if it's on the allowlist.
+      returnTo: req.headers.get("Origin") ?? undefined,
+    },
     stateSecret,
   );
 

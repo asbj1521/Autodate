@@ -49,7 +49,7 @@ export default function TopNav({ wide = false }: { wide?: boolean }) {
       )}
     >
       <Link to="/" className="flex items-center gap-2">
-        <span className="text-lg font-semibold tracking-tight">autodate</span>
+        <span className="text-lg font-semibold tracking-tight">casy</span>
       </Link>
       <div className="flex items-center gap-6 text-sm text-muted-foreground">
         <a href="#" className="transition hover:text-foreground">
