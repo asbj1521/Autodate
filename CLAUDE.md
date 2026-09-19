@@ -16,7 +16,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Autodate is a scheduling tool that helps groups of people find dates that work for everyone. Users sign in, link their calendars (Google, Outlook, Apple iCloud, or any ICS link), and the app finds the earliest shared free window in their busy times.
+**Casy** (short for Calendar Syncing; formerly Autodate) is a scheduling tool that helps groups of people find dates that work for everyone. Live at **https://casy-red.vercel.app**. The repository, Supabase project, folder and internal code names still say "autodate" on purpose (board IDs and links depend on them); only user-facing text says Casy. Never change the `"autodate lookup hash v1"` label in `secretBox.ts`: it would change every stored ICS-link hash.
+
+Casy Users sign in, link their calendars (Google, Outlook, Apple iCloud, or any ICS link), and the app finds the earliest shared free window in their busy times.
 
 **Current state:** the signed-in user's calendars are real (stored in Supabase, re-synced hourly). Friend groups and every *other* group member are still generated mock data (`src/api/mockData.ts`); the signed-in user's mock calendar is swapped for their real one on the scheduling page. Group membership, invites and multi-user groups do not exist yet.
 
@@ -26,6 +28,7 @@ Autodate is a scheduling tool that helps groups of people find dates that work f
 - **UI:** Tailwind CSS with hand-built components (`src/components/`); only `@radix-ui/react-tooltip` from Radix; icons from lucide-react
 - **Animations:** Framer Motion
 - **State:** component state plus TanStack Query for server data; one React context, for auth (`src/context/`)
+- **Hosting:** Vercel (project `casy`), auto-deploys `main`; `vercel.json` rewrites every path to `index.html` for the SPA
 - **Backend:** Supabase: Postgres, Auth (Google sign-in + email magic link), Edge Functions (Deno), Vault, pg_cron + pg_net
 - **Testing:** Vitest (frontend, `src/**/*.test.ts`) and Deno test (Edge Functions, `supabase/functions/_shared/*_test.ts`)
 - **Linting:** ESLint (TypeScript + React Hooks)
@@ -75,7 +78,7 @@ supabase/
 ### Auth and data access
 - Every table has RLS enabled with **no** policies: the browser can't read or write any table. All data goes through Edge Functions using the service role.
 - Every Edge Function identifies the caller with `callerId()` (`_shared/auth.ts`), which verifies the `Authorization: Bearer <access token>` with Supabase Auth. Never take a user id from a request body or query string. `verify_jwt = false` in `supabase/config.toml` is intentional: the publishable key is not a JWT, so functions check the login in code.
-- OAuth connect: the page POSTs to `oauth-<provider>-start` (signed in) and gets the consent URL back; the verified user id travels to the callback inside the HMAC-signed `state` (`_shared/state.ts`).
+- OAuth connect: the page POSTs to `oauth-<provider>-start` (signed in) and gets the consent URL back; the verified user id and the site the request came from (`Origin`) travel to the callback inside the HMAC-signed `state` (`_shared/state.ts`). The callback returns there only if it is in `FRONTEND_ORIGINS` (`_shared/frontend.ts`), otherwise to the first entry.
 - `calendar_connections.profile_id` is a uuid referencing `auth.users` (cascading deletes).
 
 ### Calendar data model
@@ -89,7 +92,7 @@ supabase/
 - `calendar-sync` refreshes accounts: Google/Outlook via refresh token (rotated tokens are stored again), iCloud via app password, ICS by re-fetching. Busy times are swapped in one transaction (`replace_busy_blocks`); a failed sync keeps the old data.
 - Results are stored per connection: `last_synced_at`, `sync_error`, `needs_reconnect` (credential refused).
 - pg_cron runs it at 17 past every hour, authenticated by `x-sync-secret`; the URL and secret are read from Vault (`calendar_sync_url`, `calendar_sync_secret`). The profile page's "Sync now" syncs the signed-in user's accounts.
-- **Google OAuth is in Testing mode:** only listed test users can connect, and refresh tokens expire after 7 days, after which Google accounts show "Reconnect needed".
+- **Google OAuth is In production but unverified** (since 2026-09-19): connecting Google Calendar shows "Google hasn't verified this app" (Advanced > Go to Casy), and at most 100 users can connect until the app is verified. Refresh tokens no longer expire after 7 days.
 
 ### TypeScript configuration
 - Path alias `@/*` maps to `src/*`
@@ -101,7 +104,8 @@ All secrets live in `.env.local` (never committed). The file always contains a `
 
 - Frontend: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (a publishable key, not a JWT)
 - Local copies of server secrets: `SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_OAUTH_CLIENT_ID/SECRET`, `MICROSOFT_OAUTH_CLIENT_ID/SECRET`, `OAUTH_STATE_SECRET`, `CALDAV_ENCRYPTION_KEY`, `CALENDAR_SYNC_SECRET`
-- Edge Function secrets (set with `supabase secrets set`): the ones above plus `FUNCTIONS_BASE_URL` and `FRONTEND_URL`
+- Edge Function secrets (set with `supabase secrets set`): the ones above plus `FUNCTIONS_BASE_URL`, and `FRONTEND_ORIGINS` (comma-separated sites OAuth may return to, default first: `https://casy-red.vercel.app,http://localhost:8080`; `FRONTEND_URL` is the older single-site fallback)
+- Vercel project environment variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (a change needs a redeploy to take effect)
 
 Handling rules:
 - Read the GitHub token into a shell variable inside the command; never write a token or key into a command line that gets saved (e.g. permission rules in `.claude/settings.local.json`) or print it.
@@ -114,6 +118,8 @@ Handling rules:
 Never guess, hardcode, or substitute a missing key.
 
 ## Deploying
+
+The website deploys itself: every push to `main` makes Vercel build and publish it (check the Deployments tab if the live site doesn't update). A new site address must also be added to Supabase Auth's Site URL / Redirect URLs, to `FRONTEND_ORIGINS`, and to the Google OAuth branding (home page, privacy link, authorized domain).
 
 Changes under `supabase/` only take effect once deployed. Claude Code's auto mode blocks Claude from changing (or reading) the live database and functions, so **the user runs the deploy commands** in their own terminal; give them the exact commands and what to expect:
 
