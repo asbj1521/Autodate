@@ -105,6 +105,7 @@ All secrets live in `.env.local` (never committed). The file always contains a `
 - Frontend: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (a publishable key, not a JWT)
 - Local copies of server secrets: `SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_OAUTH_CLIENT_ID/SECRET`, `MICROSOFT_OAUTH_CLIENT_ID/SECRET`, `OAUTH_STATE_SECRET`, `CALDAV_ENCRYPTION_KEY`, `CALENDAR_SYNC_SECRET`
 - Edge Function secrets (set with `supabase secrets set`): the ones above plus `FUNCTIONS_BASE_URL`, and `FRONTEND_ORIGINS` (comma-separated sites OAuth may return to, default first: `https://casy-red.vercel.app,http://localhost:8080`; `FRONTEND_URL` is the older single-site fallback)
+- Auth email (Supabase Auth SMTP, set in the Supabase **dashboard**, not with `supabase secrets set`): host `smtp.resend.com`, port 587, user `resend` (the literal word), password `RESEND_API_KEY` (kept in `.env.local`, never a function secret), sender `noreply@casy.app`, sender name `Casy`. The sending domain must be **verified in Resend** or it delivers only to the Resend account owner, which is the same dead end as Supabase's built-in mailer. `supabase/config.toml` records the same settings and reads the key as `env(RESEND_API_KEY)`.
 - Vercel project environment variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (a change needs a redeploy to take effect)
 
 Handling rules:

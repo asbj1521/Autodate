@@ -110,9 +110,10 @@ export default function Privacy() {
         <Section title="Where it is kept">
           <p>
             Data is stored with Casy&apos;s database provider, Supabase, and the website is served
-            by Vercel. Both keep standard technical logs to run their services. Casy uses no
-            analytics or advertising trackers. Your browser keeps your login session so you stay
-            signed in.
+            by Vercel. Sign-in emails are delivered by Resend, which receives your email address in
+            order to send them. All three keep standard technical logs to run their services. Casy
+            uses no analytics or advertising trackers. Your browser keeps your login session so you
+            stay signed in.
           </p>
         </Section>
 
