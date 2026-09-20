@@ -43,13 +43,18 @@ export default function TopNav({ wide = false }: { wide?: boolean }) {
   return (
     <nav
       className={cn(
-        "mx-auto flex items-center justify-between px-6 py-5",
-        // `wide` pages use the full screen; keep the bar's edges in step with theirs.
-        wide ? "lg:px-10" : "max-w-6xl",
+        "mx-auto flex items-center justify-between py-5",
+        // `wide` pages run edge to edge, so the bar takes the same responsive
+        // gutter as their content and its logo and links line up with what is
+        // underneath. Narrow pages keep the centred, capped bar.
+        wide ? "px-4 sm:px-6 lg:px-8" : "max-w-6xl px-6",
       )}
     >
       <Link to="/" className="flex items-center gap-2">
-        <span className="text-lg font-semibold tracking-tight">casy</span>
+        {/* The wordmark, sized to read as a logo rather than as another nav
+            link. It steps down on small screens: at 24px the name plus the
+            three links is wider than a narrow phone, and the row would wrap. */}
+        <span className="text-xl font-bold tracking-tight sm:text-2xl">casy</span>
       </Link>
       <div className="flex items-center gap-6 text-sm text-muted-foreground">
         <a href="#" className="transition hover:text-foreground">

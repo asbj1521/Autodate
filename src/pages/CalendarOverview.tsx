@@ -191,7 +191,7 @@ export default function CalendarOverview() {
     <div className="min-h-screen bg-background">
       <TopNav wide />
 
-      <main className="px-6 pb-20 pt-4 lg:px-10">
+      <main className="px-4 pb-20 pt-4 sm:px-6 lg:px-8">
         <Link
           to="/profile"
           className="inline-flex items-center gap-1 text-sm text-muted-foreground transition hover:text-foreground"

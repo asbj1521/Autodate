@@ -586,7 +586,7 @@ export default function FindDate() {
 
   return (
     <div className="min-h-screen bg-background">
-      <TopNav />
+      <TopNav wide />
 
       {/*
         A working page, not a poster: the calendar is what people came for, so
