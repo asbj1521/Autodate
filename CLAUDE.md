@@ -16,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Casy** (short for Calendar Syncing; formerly Autodate) is a scheduling tool that helps groups of people find dates that work for everyone. Live at **https://casy-red.vercel.app**. The repository, Supabase project, folder and internal code names still say "autodate" on purpose (board IDs and links depend on them); only user-facing text says Casy. Never change the `"autodate lookup hash v1"` label in `secretBox.ts`: it would change every stored ICS-link hash.
+**Casy** (short for Calendar Syncing; formerly Autodate) is a scheduling tool that helps groups of people find dates that work for everyone. Live at **https://casy.app** (`www.casy.app` 308s to the apex; the older `casy-red.vercel.app` still serves, so invite links sent before the move keep working). The repository, Supabase project, folder and internal code names still say "autodate" on purpose (board IDs and links depend on them); only user-facing text says Casy. Never change the `"autodate lookup hash v1"` label in `secretBox.ts`: it would change every stored ICS-link hash.
 
 Casy Users sign in, link their calendars (Google, Outlook, Apple iCloud, or any ICS link), and the app finds the earliest shared free window in their busy times.
 
@@ -104,7 +104,7 @@ All secrets live in `.env.local` (never committed). The file always contains a `
 
 - Frontend: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (a publishable key, not a JWT)
 - Local copies of server secrets: `SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_OAUTH_CLIENT_ID/SECRET`, `MICROSOFT_OAUTH_CLIENT_ID/SECRET`, `OAUTH_STATE_SECRET`, `CALDAV_ENCRYPTION_KEY`, `CALENDAR_SYNC_SECRET`
-- Edge Function secrets (set with `supabase secrets set`): the ones above plus `FUNCTIONS_BASE_URL`, and `FRONTEND_ORIGINS` (comma-separated sites OAuth may return to, default first: `https://casy-red.vercel.app,http://localhost:8080`; `FRONTEND_URL` is the older single-site fallback)
+- Edge Function secrets (set with `supabase secrets set`): the ones above plus `FUNCTIONS_BASE_URL`, and `FRONTEND_ORIGINS` (comma-separated sites OAuth may return to, default first: `https://casy.app,https://casy-red.vercel.app,http://localhost:8080`; `FRONTEND_URL` is the older single-site fallback)
 - Auth email (Supabase Auth SMTP, set in the Supabase **dashboard**, not with `supabase secrets set`): host `smtp.resend.com`, port 587, user `resend` (the literal word), password `RESEND_API_KEY` (kept in `.env.local`, never a function secret), sender `noreply@casy.app`, sender name `Casy`. The sending domain must be **verified in Resend** or it delivers only to the Resend account owner, which is the same dead end as Supabase's built-in mailer. `supabase/config.toml` records the same settings and reads the key as `env(RESEND_API_KEY)`.
 - Vercel project environment variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (a change needs a redeploy to take effect)
 
