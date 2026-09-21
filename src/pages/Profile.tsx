@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CalendarDays,
@@ -12,16 +12,19 @@ import {
 } from "lucide-react";
 
 import AppleCredentialsForm from "@/components/AppleCredentialsForm";
+import GroupsSection, { type GroupConfirm } from "@/components/GroupsSection";
 import IcsLinkForm from "@/components/IcsLinkForm";
 import ProviderCard, { type ProviderMeta } from "@/components/ProviderCard";
 import TopNav from "@/components/TopNav";
 import { displayName, useAuth } from "@/context/auth";
 import { plural } from "@/lib/accountSummary";
 import { avatarColor } from "@/lib/avatar";
+import { formatMonthYear } from "@/lib/format";
 import {
   calendarStatusQuery,
   type CalendarConnectionStatus,
 } from "@/api/calendarStatus";
+import { deleteGroup, groupsQuery, groupsQueryKey, leaveGroup, type Group } from "@/api/groups";
 import { callFunction } from "@/lib/supabaseFunctions";
 import { cn } from "@/lib/utils";
 import type { CalendarProvider } from "@/types";
@@ -78,6 +81,20 @@ const PROVIDERS: ProviderMeta[] = [
 ];
 
 /**
+ * One number in the identity card's stat strip. `null` while its source is
+ * still loading, so the row never flashes a false "0" before the real answer
+ * arrives.
+ */
+function StatTile({ label, value }: { label: string; value: number | null }) {
+  return (
+    <div className="rounded-xl bg-secondary p-3 text-center sm:text-left">
+      <p className="text-2xl font-bold tabular-nums text-foreground">{value === null ? "–" : value}</p>
+      <p className="mt-0.5 text-xs text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
+/**
  * The "Connect calendars" section of the user's profile.
  *
  * Google and Outlook connect through OAuth redirects. ICS links and Apple
@@ -113,6 +130,52 @@ export default function Profile() {
     isPending: statusPending,
     refetch: refetchStatus,
   } = useQuery(calendarStatusQuery(user.id));
+
+  // Your groups: fetched here (rather than inside GroupsSection) so the stat
+  // strip above it can use the same count without a second request.
+  const {
+    data: groups,
+    isPending: groupsPending,
+    isError: groupsFailed,
+  } = useQuery(groupsQuery(user.id));
+  const [groupConfirm, setGroupConfirm] = useState<GroupConfirm | null>(null);
+
+  const onGroupsChanged = (data: { groups: Group[] }) => {
+    queryClient.setQueryData(groupsQueryKey(user.id), data.groups);
+    setGroupConfirm(null);
+  };
+  const leaveGroupMutation = useMutation({ mutationFn: leaveGroup, onSuccess: onGroupsChanged });
+  const deleteGroupMutation = useMutation({ mutationFn: deleteGroup, onSuccess: onGroupsChanged });
+
+  const groupActionError =
+    leaveGroupMutation.isError && leaveGroupMutation.variables
+      ? {
+          groupId: leaveGroupMutation.variables,
+          message:
+            leaveGroupMutation.error instanceof Error
+              ? leaveGroupMutation.error.message
+              : "Couldn't leave the group",
+        }
+      : deleteGroupMutation.isError && deleteGroupMutation.variables
+        ? {
+            groupId: deleteGroupMutation.variables,
+            message:
+              deleteGroupMutation.error instanceof Error
+                ? deleteGroupMutation.error.message
+                : "Couldn't delete the group",
+          }
+        : null;
+
+  function askLeaveGroup(groupId: string) {
+    leaveGroupMutation.reset();
+    deleteGroupMutation.reset();
+    setGroupConfirm({ groupId, action: "leave" });
+  }
+  function askDeleteGroup(groupId: string) {
+    leaveGroupMutation.reset();
+    deleteGroupMutation.reset();
+    setGroupConfirm({ groupId, action: "delete" });
+  }
 
   // The OAuth callbacks redirect back here with ?connected=<provider> or
   // ?error=<provider>:<reason>. Read it once, show a banner, then strip the
@@ -314,33 +377,87 @@ export default function Profile() {
           </div>
         )}
 
-        {/* Who this is, in one line. The overview button lives here so the
-            section below can spend its space on the calendars themselves. */}
-        <div className="mt-5 flex flex-wrap items-center gap-3">
-          <span
-            className={cn(
-              "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-base font-semibold",
-              avatarColor(0),
-            )}
-          >
-            {name.charAt(0).toUpperCase()}
-          </span>
-          <div className="min-w-0">
-            <h1 className="truncate text-lg font-bold leading-tight text-foreground">{name}</h1>
-            {/* Under a Google name, the email says which account this is; when
-                the email is already the name, it would only repeat it. */}
-            {user?.email && user.email !== name && (
-              <p className="truncate text-sm text-muted-foreground">{user.email}</p>
-            )}
+        {/* Who this is, plus a stat strip: three numbers that say at a glance
+            how much Casy is actually doing for this person. The overview
+            button lives here so the section below can spend its space on the
+            calendars themselves. */}
+        <div className="mt-5 rounded-2xl border bg-card p-5 shadow-sm sm:p-6">
+          <div className="flex flex-wrap items-center gap-4">
+            <span
+              className={cn(
+                "flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-xl font-semibold",
+                avatarColor(0),
+              )}
+            >
+              {name.charAt(0).toUpperCase()}
+            </span>
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-xl font-bold leading-tight text-foreground">{name}</h1>
+              <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 truncate text-sm text-muted-foreground">
+                {/* Under a Google name, the email says which account this is;
+                    when the email is already the name, it would only repeat it. */}
+                {user?.email && user.email !== name && <span>{user.email}</span>}
+                {user?.email && user.email !== name && user.created_at && <span>·</span>}
+                {user?.created_at && (
+                  <span className="whitespace-nowrap">
+                    Casy member since {formatMonthYear(user.created_at)}
+                  </span>
+                )}
+              </p>
+            </div>
+            <Link
+              to="/calendar-overview"
+              className="flex shrink-0 items-center gap-2 rounded-full border bg-background px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-secondary"
+            >
+              <CalendarDays className="h-4 w-4" />
+              Calendar overview
+            </Link>
           </div>
-          <Link
-            to="/calendar-overview"
-            className="ml-auto flex shrink-0 items-center gap-2 rounded-full border bg-background px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-secondary"
-          >
-            <CalendarDays className="h-4 w-4" />
-            Calendar overview
-          </Link>
+
+          <div className="mt-5 grid grid-cols-3 gap-3 border-t pt-5">
+            <StatTile
+              label="Groups"
+              value={groupsPending ? null : (groups?.length ?? 0)}
+            />
+            <StatTile
+              label="Calendars connected"
+              value={
+                statusPending
+                  ? null
+                  : (connections?.filter((c) => c.status === "connected").length ?? 0)
+              }
+            />
+            <StatTile
+              label="Busy blocks tracked"
+              value={
+                statusPending
+                  ? null
+                  : (connections
+                      ?.filter((c) => c.status === "connected")
+                      .reduce((sum, c) => sum + c.busyCount, 0) ?? 0)
+              }
+            />
+          </div>
         </div>
+
+        {/* Your groups */}
+        <GroupsSection
+          groups={groups}
+          isPending={groupsPending}
+          isError={groupsFailed}
+          youId={user.id}
+          confirm={groupConfirm}
+          leavingId={leaveGroupMutation.isPending ? (leaveGroupMutation.variables ?? null) : null}
+          deletingId={
+            deleteGroupMutation.isPending ? (deleteGroupMutation.variables ?? null) : null
+          }
+          actionError={groupActionError}
+          onAskLeave={askLeaveGroup}
+          onAskDelete={askDeleteGroup}
+          onCancel={() => setGroupConfirm(null)}
+          onLeave={(groupId) => leaveGroupMutation.mutate(groupId)}
+          onDelete={(groupId) => deleteGroupMutation.mutate(groupId)}
+        />
 
         {/* Connected calendars */}
         <section className="mt-8">

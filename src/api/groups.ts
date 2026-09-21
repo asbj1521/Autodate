@@ -28,6 +28,12 @@ export interface Group {
   id: string;
   name: string;
   createdAt: string;
+  /**
+   * Whoever made the group — null if their account is gone (created_by is set
+   * null on delete, see the migration). Grants nothing except the ability to
+   * delete the group outright; every other action is open to any member.
+   */
+  createdBy: string | null;
   members: GroupMember[];
 }
 
@@ -42,12 +48,22 @@ export interface GroupBusy {
 }
 
 /**
+ * The cache key for a person's groups, shared by every place that reads or
+ * writes it (the query itself, and any mutation that hands back a fresh
+ * group list) so a successful create/join/leave/delete can update the cache
+ * directly instead of triggering a refetch.
+ */
+export function groupsQueryKey(userId: string) {
+  return ["groups", userId] as const;
+}
+
+/**
  * Your groups. `userId` only keys the cache so one person's answer is never
  * served to the next; the function itself learns who is asking from the token.
  */
 export function groupsQuery(userId: string) {
   return queryOptions({
-    queryKey: ["groups", userId],
+    queryKey: groupsQueryKey(userId),
     queryFn: async (): Promise<Group[]> => {
       const body = await callFunction<{ groups?: Group[] }>("groups", {
         body: { action: "list" },
@@ -112,6 +128,18 @@ export async function leaveGroup(
   return await callFunction("groups", {
     body: { action: "leave", groupId },
     errorMessage: "Couldn't leave the group",
+  });
+}
+
+/**
+ * Delete a group outright, removing it (and everyone's membership) for good.
+ * Only the person who created it can do this; anyone else should leave
+ * instead.
+ */
+export async function deleteGroup(groupId: string): Promise<{ groups: Group[]; outcome: "deleted" }> {
+  return await callFunction("groups", {
+    body: { action: "delete", groupId },
+    errorMessage: "Couldn't delete the group",
   });
 }
 

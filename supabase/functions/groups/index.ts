@@ -1,6 +1,6 @@
 /**
- * Friend groups: making one, inviting people, joining, leaving, and reading
- * back the members with their busy times.
+ * Friend groups: making one, inviting people, joining, leaving, deleting one
+ * you made, and reading back the members with their busy times.
  *
  * One function rather than six, because every action is the same shape
  * underneath: work out who is calling, check they belong to the group, touch
@@ -82,7 +82,7 @@ async function listGroups(db: Db, profileId: string) {
 
   const { data: groups, error: groupsErr } = await db
     .from("friend_groups")
-    .select("id, name, created_at")
+    .select("id, name, created_at, created_by")
     .in("id", groupIds)
     .order("created_at", { ascending: true });
   if (groupsErr) throw groupsErr;
@@ -106,19 +106,26 @@ async function listGroups(db: Db, profileId: string) {
     (names ?? []).map((p: { id: string; display_name: string | null }) => [p.id, p.display_name]),
   );
 
-  return (groups ?? []).map((g: { id: string; name: string; created_at: string }) => ({
-    id: g.id,
-    name: g.name,
-    createdAt: g.created_at,
-    members: (members ?? [])
-      .filter((m: { group_id: string }) => m.group_id === g.id)
-      .map((m: { profile_id: string; joined_at: string }) => ({
-        profileId: m.profile_id,
-        name: nameById.get(m.profile_id) ?? "Someone",
-        isYou: m.profile_id === profileId,
-        joinedAt: m.joined_at,
-      })),
-  }));
+  return (groups ?? []).map(
+    (g: { id: string; name: string; created_at: string; created_by: string | null }) => ({
+      id: g.id,
+      name: g.name,
+      createdAt: g.created_at,
+      // Whoever made the group, so the frontend can offer them (and only
+      // them) the delete action below. Grants nothing by itself — every
+      // membership check still runs — but this is the one place a group's
+      // history is visible in the API rather than only in the database.
+      createdBy: g.created_by,
+      members: (members ?? [])
+        .filter((m: { group_id: string }) => m.group_id === g.id)
+        .map((m: { profile_id: string; joined_at: string }) => ({
+          profileId: m.profile_id,
+          name: nameById.get(m.profile_id) ?? "Someone",
+          isYou: m.profile_id === profileId,
+          joinedAt: m.joined_at,
+        })),
+    }),
+  );
 }
 
 /** True if this person is in this group. Checked before every group action. */
@@ -390,6 +397,31 @@ Deno.serve(async (req) => {
           return json({ error: "You are not in that group." }, 403);
         }
         return json({ groups: await listGroups(db, profileId), outcome });
+      }
+
+      case "delete": {
+        const groupId = payload.groupId;
+        if (typeof groupId !== "string") return json({ error: "groupId is required" }, 400);
+
+        // Only the person who made the group may delete it outright — the one
+        // power `created_by` actually grants. Everyone else's way out is
+        // "leave", which only removes themself.
+        const { data: group, error: groupErr } = await db
+          .from("friend_groups")
+          .select("id, created_by")
+          .eq("id", groupId)
+          .maybeSingle();
+        if (groupErr) throw groupErr;
+        if (!group) return json({ error: "That group no longer exists." }, 404);
+        if (group.created_by !== profileId) {
+          return json({ error: "Only the person who made this group can delete it." }, 403);
+        }
+
+        // group_members and group_invites cascade off this delete (see the
+        // friend_groups migration's foreign keys), so nothing else to clean up.
+        const { error: deleteErr } = await db.from("friend_groups").delete().eq("id", groupId);
+        if (deleteErr) throw deleteErr;
+        return json({ groups: await listGroups(db, profileId), outcome: "deleted" });
       }
 
       case "busy": {

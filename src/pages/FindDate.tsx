@@ -21,6 +21,7 @@ import {
 import {
   createGroup,
   createInvite,
+  groupsQueryKey,
   leaveGroup,
   type Group,
 } from "@/api/groups";
@@ -241,7 +242,7 @@ export default function FindDate() {
   // Anything that changes membership answers with the new list of groups, so
   // the cache is filled from the reply instead of asking for it again.
   const onGroupsChanged = (data: { groups: Group[] }) => {
-    queryClient.setQueryData(["groups", user?.id ?? ""], data.groups);
+    queryClient.setQueryData(groupsQueryKey(user?.id ?? ""), data.groups);
   };
 
   const createMutation = useMutation({

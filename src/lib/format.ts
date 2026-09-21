@@ -49,3 +49,8 @@ export function formatDaySpan(start: string, end: string): string {
 export function formatTripSpan(start: string, end: string): string {
   return `${formatDate(start)} ${formatTime(start)} to ${formatDate(end)} ${formatTime(end)}`;
 }
+
+/** "Sep 2026": how long someone has had a Casy account, or a group has existed. */
+export function formatMonthYear(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: APP_TIME_ZONE });
+}
