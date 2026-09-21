@@ -16,18 +16,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Casy** (short for Calendar Syncing; formerly Autodate) is a scheduling tool that helps groups of people find dates that work for everyone. Live at **https://casy.app** (`www.casy.app` 308s to the apex; the older `casy-red.vercel.app` still serves, so invite links sent before the move keep working). The repository, Supabase project, folder and internal code names still say "autodate" on purpose (board IDs and links depend on them); only user-facing text says Casy. Never change the `"autodate lookup hash v1"` label in `secretBox.ts`: it would change every stored ICS-link hash.
+**Casy** (short for Calendar Syncing; formerly Autodate) is a scheduling tool that helps groups of people find dates that work for everyone. Live at **https://casy.app** (`www.casy.app` 308s to the apex; the older `casy-red.vercel.app` still serves, so invite links sent before the move keep working). The Supabase project, folder, git remote URL and internal code names still say "autodate" on purpose (board IDs and links depend on them); only user-facing text says Casy. The GitHub repo itself is now `asbj1521/casy`; the old `asbj1521/Autodate` URLs redirect, which is why the git remote still works. Never change the `"autodate lookup hash v1"` label in `secretBox.ts`: it would change every stored ICS-link hash.
 
 Casy Users sign in, link their calendars (Google, Outlook, Apple iCloud, or any ICS link), and the app finds the earliest shared free window in their busy times.
 
-**Current state:** the signed-in user's calendars are real (stored in Supabase, re-synced hourly). Friend groups and every *other* group member are still generated mock data (`src/api/mockData.ts`); the signed-in user's mock calendar is swapped for their real one on the scheduling page. Group membership, invites and multi-user groups do not exist yet.
+**Current state:** everything a signed-in user touches is real: their calendars (stored in Supabase, re-synced hourly), friend groups with invite links (`/join/:token`), and group availability built from every member's real busy times. Someone with no groups yet sees ten generated example groups (`src/api/mockData.ts`), each labelled "Example", with their own real calendar swapped into the "you" slot. The profile page lists your groups (leave any, delete ones you created) and, for admins only, opens admin mode.
 
 ## Tech Stack
 
 - **Frontend:** React 19 + TypeScript + Vite, React Router v7
 - **UI:** Tailwind CSS with hand-built components (`src/components/`); only `@radix-ui/react-tooltip` from Radix; icons from lucide-react
 - **Animations:** Framer Motion
-- **State:** component state plus TanStack Query for server data; one React context, for auth (`src/context/`)
+- **State:** component state plus TanStack Query for server data, with a few of the user's own answers remembered across reloads (`src/lib/queryPersistence.ts`); one React context, for auth (`src/context/`)
 - **Hosting:** Vercel (project `casy`), auto-deploys `main`; `vercel.json` rewrites every path to `index.html` for the SPA
 - **Backend:** Supabase: Postgres, Auth (Google sign-in + email magic link), Edge Functions (Deno), Vault, pg_cron + pg_net
 - **Testing:** Vitest (frontend, `src/**/*.test.ts`) and Deno test (Edge Functions, `supabase/functions/_shared/*_test.ts`)
@@ -56,11 +56,12 @@ supabase db push --dry-run
 ### Directory structure
 ```
 src/
-├── api/          # Data access: calendarStatus query, mockData (generated groups), currentUser
-├── components/   # Hand-built UI components; RequireAuth guards signed-in routes
+├── api/          # Server data: groups, calendarStatus, admin (queries + calls); mockData (example groups), currentUser
+├── components/   # Hand-built UI components; RequireAuth guards signed-in routes; AdminPanel is lazy-loaded
 ├── context/      # Auth: AuthProvider (session) + auth.ts (useAuth, displayName)
+├── hooks/        # useSchedulingGroups (real vs example groups), useExampleCarousel
 ├── lib/          # Pure logic + clients (see below); tests sit next to the code
-├── pages/        # FindDate (/), SignIn, Profile, CalendarOverview
+├── pages/        # FindDate (/), SignIn, Profile, CalendarOverview, JoinGroup (/join/:token), Privacy
 └── types/        # Core data model (BusyInterval, Participant, Event, ...)
 supabase/
 ├── functions/    # One folder per Edge Function; _shared/ holds provider adapters and helpers
@@ -71,18 +72,25 @@ supabase/
 - `src/lib/availability.ts`: the scheduling engine. Pure functions over epoch ms: single meetings, whole-day spans (vacations), weekly spans (weekend trips), vacation suggestions. Work/school blocks are "soft" (need time off), all-day absences are "hard".
 - `src/lib/zone.ts`: all local-time arithmetic (local midnight, clock hours, weekdays, months) via Intl. Days are local midnight to local midnight, so DST days are 23/25 hours. The engine, heatmap and calendar take a **required** `timeZone`; the app uses `APP_TIME_ZONE` (Europe/Copenhagen). Busy blocks are always UTC instants. Never step days by adding 86 400 000 ms.
 - `src/lib/heatmap.ts`: the month grid tinted by how many people are free.
-- `src/lib/realCalendar.ts`: maps the user's stored blocks into the engine's shape (calendar purpose work/school -> category) and swaps them into the mock groups.
+- `src/lib/realCalendar.ts`: maps the user's stored blocks into the engine's shape (calendar purpose work/school -> category) and swaps them into an example group's "you" slot.
+- `src/hooks/useSchedulingGroups.ts`: which groups the scheduling page searches. Real groups carry every member's busy time; a member with no calendar is left out of the search and named in `waitingFor` rather than counted as free. With no real groups, the labelled examples cycle instead. Only the group on screen is fetched.
+- `src/lib/queryPersistence.ts`: remembers only the `groups`, `calendar-status` and `admin-status` queries in localStorage (keys include the user id, wiped on sign-out, dropped after 7 days), so reloads show them at once and refresh in the background. Only ever add queries about the signed-in user themself: never other people's busy times or the admin overview.
+- `src/lib/adminOverview.ts`: patches the admin overview after an action so the row disappears at once, while the real overview refetches in the background.
 - `src/lib/supabaseFunctions.ts`: `callFunction()`, the only way the frontend calls Edge Functions. It attaches the session's access token.
 - `src/lib/supabase.ts`: the Supabase client, used for auth only (tables are not read from the browser).
 
 ### Auth and data access
 - Every table has RLS enabled with **no** policies: the browser can't read or write any table. All data goes through Edge Functions using the service role.
-- Every Edge Function identifies the caller with `callerId()` (`_shared/auth.ts`), which verifies the `Authorization: Bearer <access token>` with Supabase Auth. Never take a user id from a request body or query string. `verify_jwt = false` in `supabase/config.toml` is intentional: the publishable key is not a JWT, so functions check the login in code.
+- Every Edge Function identifies the caller with `callerId()` or `callerUser()` (`_shared/auth.ts`), which verifies the `Authorization: Bearer <access token>` with Supabase Auth. Never take a user id from a request body or query string. `verify_jwt = false` in `supabase/config.toml` is intentional: the publishable key is not a JWT, so functions check the login in code.
 - OAuth connect: the page POSTs to `oauth-<provider>-start` (signed in) and gets the consent URL back; the verified user id and the site the request came from (`Origin`) travel to the callback inside the HMAC-signed `state` (`_shared/state.ts`). The callback returns there only if it is in `FRONTEND_ORIGINS` (`_shared/frontend.ts`), otherwise to the first entry.
 - `calendar_connections.profile_id` is a uuid referencing `auth.users` (cascading deletes).
+- The `groups` function handles every group action, picked by `action` in the POST body: list, create, invite, preview, join, leave, delete (creator only), busy. `preview` is the only one that works signed out (an invite link shows the group's name and size); every other action checks membership. Members see each other's names and busy ranges, never emails, calendar names or event titles.
+- Admin mode: the `admin` function treats the user ids in the `ADMIN_USER_IDS` secret as admins (`_shared/admin.ts`) and re-checks it on every action; `status` only answers yes or no. The profile's admin button is a convenience, the function is the lock. Admin views show names, dates, counts and sync health; never emails (a Google or Outlook connection's `account_label` is an email), busy times or event details.
 
-### Calendar data model
-`calendar_connections` (one per linked account) -> `calendar_sources` (one per calendar, with a user-set `purpose`) -> `calendar_busy_cache` (start/end only; **no event titles are ever stored**). Credentials live in `calendar_secrets`.
+### Data model
+- Calendars: `calendar_connections` (one per linked account) -> `calendar_sources` (one per calendar, with a user-set `purpose`) -> `calendar_busy_cache` (start/end only; **no event titles are ever stored**). Credentials live in `calendar_secrets`.
+- Groups: `friend_groups` (named so because GROUPS is a Postgres keyword; `created_by` is set null if the creator's account goes) -> `group_members` (a trigger caps groups at 20 members and each person at 20 groups) and `group_invites` (only an HMAC of the invite token is stored; links last 7 days and anyone holding one can join). `profiles` holds each user's display name, copied from their own login by the `groups` function; it deliberately has no email.
+- `leave_friend_group()` removes a member and deletes the group if they were the last one. Deleting an account cascades everything it owns; the admin delete also removes groups it leaves empty.
 
 ### Secrets
 - Every credential in `calendar_secrets` is encrypted with `_shared/secretBox.ts` (AES-256-GCM, format `v1:<nonce>:<ciphertext>`); a check constraint rejects anything else. The key is the `CALDAV_ENCRYPTION_KEY` function secret (the name is historical; it protects all secrets).
@@ -104,7 +112,7 @@ All secrets live in `.env.local` (never committed). The file always contains a `
 
 - Frontend: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (a publishable key, not a JWT)
 - Local copies of server secrets: `SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_OAUTH_CLIENT_ID/SECRET`, `MICROSOFT_OAUTH_CLIENT_ID/SECRET`, `OAUTH_STATE_SECRET`, `CALDAV_ENCRYPTION_KEY`, `CALENDAR_SYNC_SECRET`
-- Edge Function secrets (set with `supabase secrets set`): the ones above plus `FUNCTIONS_BASE_URL`, and `FRONTEND_ORIGINS` (comma-separated sites OAuth may return to, default first: `https://casy.app,https://casy-red.vercel.app,http://localhost:8080`; `FRONTEND_URL` is the older single-site fallback)
+- Edge Function secrets (set with `supabase secrets set`): the ones above plus `FUNCTIONS_BASE_URL`, `ADMIN_USER_IDS` (comma-separated user ids with admin mode; not kept in `.env.local`), and `FRONTEND_ORIGINS` (comma-separated sites OAuth may return to, default first: `https://casy.app,https://casy-red.vercel.app,http://localhost:8080`; `FRONTEND_URL` is the older single-site fallback)
 - Auth email (Supabase Auth SMTP, set in the Supabase **dashboard**, not with `supabase secrets set`): host `smtp.resend.com`, port 587, user `resend` (the literal word), password `RESEND_API_KEY` (kept in `.env.local`, never a function secret), sender `noreply@casy.app`, sender name `Casy`. The sending domain must be **verified in Resend** or it delivers only to the Resend account owner, which is the same dead end as Supabase's built-in mailer. `supabase/config.toml` records the same settings and reads the key as `env(RESEND_API_KEY)`.
 - Vercel project environment variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (a change needs a redeploy to take effect)
 
@@ -217,7 +225,7 @@ If the user picked an existing TO-DO, **clean it up first** before touching the 
 - Rewrite or write the body as a clean `## Problem / Feature` section — max 5 lines, no filler
 - Patch the issue via REST:
   ```bash
-  PATCH https://api.github.com/repos/asbj1521/Autodate/issues/<NUMBER>
+  PATCH https://api.github.com/repos/asbj1521/casy/issues/<NUMBER>
   { "title": "Clean title", "body": "## Problem / Feature\n\nConcise description..." }
   ```
 - Show the user the cleaned title + description and confirm before proceeding
@@ -238,7 +246,7 @@ mutation {
 
 If it's something new, create a GitHub issue for it first, add it to the board, then move it to In Progress:
 ```bash
-POST https://api.github.com/repos/asbj1521/Autodate/issues
+POST https://api.github.com/repos/asbj1521/casy/issues
 { "title": "...", "body": "## Problem / Feature\n\n..." }
 
 # Then add to board:
@@ -257,7 +265,7 @@ mutation { addProjectV2ItemById(input: { projectId: "PVT_kwHOD5fAM84BbNZz" conte
 
 1. **Update the issue body** — append a `## What was done` section (3–5 bullet points) to the original description:
    ```bash
-   PATCH https://api.github.com/repos/asbj1521/Autodate/issues/<NUMBER>
+   PATCH https://api.github.com/repos/asbj1521/casy/issues/<NUMBER>
    { "body": "<original body>\n\n---\n\n## What was done\n\n- ..." }
    ```
 2. **Move card to Done:**
@@ -266,7 +274,7 @@ mutation { addProjectV2ItemById(input: { projectId: "PVT_kwHOD5fAM84BbNZz" conte
    ```
 3. **Close the issue:**
    ```bash
-   PATCH https://api.github.com/repos/asbj1521/Autodate/issues/<NUMBER>
+   PATCH https://api.github.com/repos/asbj1521/casy/issues/<NUMBER>
    { "state": "closed" }
    ```
 4. **Merge to main:**
@@ -275,7 +283,8 @@ mutation { addProjectV2ItemById(input: { projectId: "PVT_kwHOD5fAM84BbNZz" conte
    git pull origin main
    git merge feature/[task-name]
    git push origin main
-   git push origin --delete feature/[task-name]
+   git branch -d feature/[task-name]
+   git push origin --delete feature/[task-name]   # only if the branch was ever pushed
    ```
 
 ### Project IDs Reference
@@ -287,4 +296,4 @@ mutation { addProjectV2ItemById(input: { projectId: "PVT_kwHOD5fAM84BbNZz" conte
 | Status: TO-DO's | `f75ad846` |
 | Status: In progress | `47fc9ee4` |
 | Status: Done | `98236657` |
-| Repo | `asbj1521/Autodate` |
+| Repo | `asbj1521/casy` (renamed from `asbj1521/Autodate`, which redirects) |
