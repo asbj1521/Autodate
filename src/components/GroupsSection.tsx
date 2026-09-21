@@ -187,7 +187,7 @@ export default function GroupsSection({
             </InfoTip>
           </h2>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Leave any group, or delete one you made — that removes it for everyone in it.
+            Leave any group, or delete one you made. Deleting removes it for everyone in it.
           </p>
         </div>
         <Link

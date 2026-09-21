@@ -442,6 +442,12 @@ verify_jwt = false
 # to join before signing in; the link itself is what proves they were sent it.
 verify_jwt = false
 
+[functions.admin]
+# Checks the caller's login in code (_shared/auth.ts), then that they are
+# listed in the ADMIN_USER_IDS secret (_shared/admin.ts); everyone else gets a
+# 403 on every action except "status", which only answers yes or no.
+verify_jwt = false
+
 [functions.calendar-sync]
 # Two callers, both checked in code: the hourly pg_cron job by a shared secret
 # (x-sync-secret), and a signed-in person's "Sync now" by their login

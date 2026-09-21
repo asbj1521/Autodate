@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   Loader2,
   RefreshCw,
+  ShieldCheck,
   XCircle,
 } from "lucide-react";
 
@@ -15,6 +16,7 @@ import AppleCredentialsForm from "@/components/AppleCredentialsForm";
 import GroupsSection, { type GroupConfirm } from "@/components/GroupsSection";
 import IcsLinkForm from "@/components/IcsLinkForm";
 import ProviderCard, { type ProviderMeta } from "@/components/ProviderCard";
+import StatTile from "@/components/StatTile";
 import TopNav from "@/components/TopNav";
 import { displayName, useAuth } from "@/context/auth";
 import { plural } from "@/lib/accountSummary";
@@ -24,6 +26,7 @@ import {
   calendarStatusQuery,
   type CalendarConnectionStatus,
 } from "@/api/calendarStatus";
+import { adminStatusQuery } from "@/api/admin";
 import { deleteGroup, groupsQuery, groupsQueryKey, leaveGroup, type Group } from "@/api/groups";
 import { callFunction } from "@/lib/supabaseFunctions";
 import { cn } from "@/lib/utils";
@@ -81,18 +84,10 @@ const PROVIDERS: ProviderMeta[] = [
 ];
 
 /**
- * One number in the identity card's stat strip. `null` while its source is
- * still loading, so the row never flashes a false "0" before the real answer
- * arrives.
+ * Admin mode's panel, loaded only when someone actually opens it: nobody but
+ * the admin ever downloads its code.
  */
-function StatTile({ label, value }: { label: string; value: number | null }) {
-  return (
-    <div className="rounded-xl bg-secondary p-3 text-center sm:text-left">
-      <p className="text-2xl font-bold tabular-nums text-foreground">{value === null ? "–" : value}</p>
-      <p className="mt-0.5 text-xs text-muted-foreground">{label}</p>
-    </div>
-  );
-}
+const AdminPanel = lazy(() => import("@/components/AdminPanel"));
 
 /**
  * The "Connect calendars" section of the user's profile.
@@ -139,6 +134,18 @@ export default function Profile() {
     isError: groupsFailed,
   } = useQuery(groupsQuery(user.id));
   const [groupConfirm, setGroupConfirm] = useState<GroupConfirm | null>(null);
+
+  // Admin mode. The server says whether this person is an admin (and checks
+  // again on every admin action); the page only uses the answer to decide
+  // whether to show the button. Kept in the URL so a refresh stays put.
+  const { data: isAdmin } = useQuery(adminStatusQuery(user.id));
+  const adminMode = isAdmin === true && searchParams.get("mode") === "admin";
+  const toggleAdminMode = () => {
+    const next = new URLSearchParams(searchParams);
+    if (adminMode) next.delete("mode");
+    else next.set("mode", "admin");
+    setSearchParams(next);
+  };
 
   const onGroupsChanged = (data: { groups: Group[] }) => {
     queryClient.setQueryData(groupsQueryKey(user.id), data.groups);
@@ -405,13 +412,30 @@ export default function Profile() {
                 )}
               </p>
             </div>
-            <Link
-              to="/calendar-overview"
-              className="flex shrink-0 items-center gap-2 rounded-full border bg-background px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-secondary"
-            >
-              <CalendarDays className="h-4 w-4" />
-              Calendar overview
-            </Link>
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={toggleAdminMode}
+                  className={cn(
+                    "flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition",
+                    adminMode
+                      ? "border bg-background text-foreground hover:bg-secondary"
+                      : "bg-foreground text-background hover:opacity-90",
+                  )}
+                >
+                  <ShieldCheck className="h-4 w-4" />
+                  {adminMode ? "Exit admin mode" : "SWITCH TO ADMIN MODE"}
+                </button>
+              )}
+              <Link
+                to="/calendar-overview"
+                className="flex items-center gap-2 rounded-full border bg-background px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-secondary"
+              >
+                <CalendarDays className="h-4 w-4" />
+                Calendar overview
+              </Link>
+            </div>
           </div>
 
           <div className="mt-5 grid grid-cols-3 gap-3 border-t pt-5">
@@ -440,140 +464,155 @@ export default function Profile() {
           </div>
         </div>
 
-        {/* Your groups */}
-        <GroupsSection
-          groups={groups}
-          isPending={groupsPending}
-          isError={groupsFailed}
-          youId={user.id}
-          confirm={groupConfirm}
-          leavingId={leaveGroupMutation.isPending ? (leaveGroupMutation.variables ?? null) : null}
-          deletingId={
-            deleteGroupMutation.isPending ? (deleteGroupMutation.variables ?? null) : null
-          }
-          actionError={groupActionError}
-          onAskLeave={askLeaveGroup}
-          onAskDelete={askDeleteGroup}
-          onCancel={() => setGroupConfirm(null)}
-          onLeave={(groupId) => leaveGroupMutation.mutate(groupId)}
-          onDelete={(groupId) => deleteGroupMutation.mutate(groupId)}
-        />
-
-        {/* Connected calendars */}
-        <section className="mt-8">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-foreground">Connected calendars</h2>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                Only free and busy times are read, never event titles or details. Calendars sync
-                automatically every hour.
+        {adminMode ? (
+          <Suspense
+            fallback={
+              <p className="mt-8 flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Opening admin mode…
               </p>
-            </div>
-            {hasConnected && (
-              <button
-                type="button"
-                onClick={() => void handleSyncNow()}
-                disabled={syncing}
-                className="flex shrink-0 items-center gap-2 rounded-full border bg-background px-3.5 py-1.5 text-sm font-semibold text-foreground transition hover:bg-secondary disabled:opacity-60"
-              >
-                {syncing ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-4 w-4" />
+            }
+          >
+            <AdminPanel youId={user.id} />
+          </Suspense>
+        ) : (
+          <>
+            {/* Your groups */}
+            <GroupsSection
+              groups={groups}
+              isPending={groupsPending}
+              isError={groupsFailed}
+              youId={user.id}
+              confirm={groupConfirm}
+              leavingId={leaveGroupMutation.isPending ? (leaveGroupMutation.variables ?? null) : null}
+              deletingId={
+                deleteGroupMutation.isPending ? (deleteGroupMutation.variables ?? null) : null
+              }
+              actionError={groupActionError}
+              onAskLeave={askLeaveGroup}
+              onAskDelete={askDeleteGroup}
+              onCancel={() => setGroupConfirm(null)}
+              onLeave={(groupId) => leaveGroupMutation.mutate(groupId)}
+              onDelete={(groupId) => deleteGroupMutation.mutate(groupId)}
+            />
+
+            {/* Connected calendars */}
+            <section className="mt-8">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-foreground">Connected calendars</h2>
+                  <p className="mt-0.5 text-sm text-muted-foreground">
+                    Only free and busy times are read, never event titles or details. Calendars sync
+                    automatically every hour.
+                  </p>
+                </div>
+                {hasConnected && (
+                  <button
+                    type="button"
+                    onClick={() => void handleSyncNow()}
+                    disabled={syncing}
+                    className="flex shrink-0 items-center gap-2 rounded-full border bg-background px-3.5 py-1.5 text-sm font-semibold text-foreground transition hover:bg-secondary disabled:opacity-60"
+                  >
+                    {syncing ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4" />
+                    )}
+                    {syncing ? "Syncing" : "Sync now"}
+                  </button>
                 )}
-                {syncing ? "Syncing" : "Sync now"}
-              </button>
-            )}
-          </div>
-          {syncResult && (
-            <p
-              className={cn(
-                "mt-2 flex items-center gap-2 text-sm",
-                syncResult.ok ? "text-emerald-800" : "text-red-800",
-              )}
-            >
-              {syncResult.ok ? (
-                <CheckCircle2 className="h-4 w-4 shrink-0" />
-              ) : (
-                <XCircle className="h-4 w-4 shrink-0" />
-              )}
-              {syncResult.text}
-            </p>
-          )}
-
-          <div className="mt-4 grid items-start gap-4 lg:grid-cols-2">
-            {PROVIDERS.map((provider) => {
-              const attempts = attemptsFor(connections, provider.id);
-              return (
-                <ProviderCard
-                  key={provider.id}
-                  meta={provider}
-                  accounts={attempts.filter((c) => c.status === "connected")}
-                  latest={attempts[0]}
-                  statusPending={statusPending}
-                  formOpen={
-                    (provider.id === "apple" && appleFormOpen) ||
-                    (provider.id === "ics" && icsFormOpen)
-                  }
-                  confirmRemoveId={confirmRemoveId}
-                  removingId={removingId}
-                  removeError={removeError}
-                  onConnect={() => void handleConnect(provider.id)}
-                  onAskRemove={(id) => {
-                    setRemoveError(null);
-                    setConfirmRemoveId(id);
-                  }}
-                  onCancelRemove={() => setConfirmRemoveId(null)}
-                  onRemove={(id) => void handleRemove(id)}
+              </div>
+              {syncResult && (
+                <p
+                  className={cn(
+                    "mt-2 flex items-center gap-2 text-sm",
+                    syncResult.ok ? "text-emerald-800" : "text-red-800",
+                  )}
                 >
-                  {/* ICS: paste a calendar feed link */}
-                  {provider.id === "ics" && icsResult && (
-                    <p className="mt-3 flex items-center gap-2 text-sm text-emerald-800">
-                      <CheckCircle2 className="h-4 w-4 shrink-0" />
-                      {icsResult}
-                    </p>
+                  {syncResult.ok ? (
+                    <CheckCircle2 className="h-4 w-4 shrink-0" />
+                  ) : (
+                    <XCircle className="h-4 w-4 shrink-0" />
                   )}
-                  {provider.id === "ics" && (
-                    // The key clears the typed link after a successful add, so
-                    // "Add another" starts from an empty form.
-                    <IcsLinkForm
-                      key={icsAddedCount}
-                      open={icsFormOpen}
-                      submitting={icsSubmitting}
-                      error={icsError}
-                      onSubmit={(url, name) => void handleIcsSubmit(url, name)}
-                      onCancel={() => {
-                        setIcsFormOpen(false);
-                        setIcsError(null);
-                      }}
-                    />
-                  )}
+                  {syncResult.text}
+                </p>
+              )}
 
-                  {/* Apple: Apple ID email + app-specific password */}
-                  {provider.id === "apple" && appleResult && (
-                    <p className="mt-3 flex items-center gap-2 text-sm text-emerald-800">
-                      <CheckCircle2 className="h-4 w-4 shrink-0" />
-                      {appleResult}
-                    </p>
-                  )}
-                  {provider.id === "apple" && (
-                    <AppleCredentialsForm
-                      key={appleAddedCount}
-                      open={appleFormOpen}
-                      submitting={appleSubmitting}
-                      error={appleError}
-                      onSubmit={(email, password) => void handleAppleSubmit(email, password)}
-                      onCancel={() => {
-                        setAppleFormOpen(false);
-                        setAppleError(null);
+              <div className="mt-4 grid items-start gap-4 lg:grid-cols-2">
+                {PROVIDERS.map((provider) => {
+                  const attempts = attemptsFor(connections, provider.id);
+                  return (
+                    <ProviderCard
+                      key={provider.id}
+                      meta={provider}
+                      accounts={attempts.filter((c) => c.status === "connected")}
+                      latest={attempts[0]}
+                      statusPending={statusPending}
+                      formOpen={
+                        (provider.id === "apple" && appleFormOpen) ||
+                        (provider.id === "ics" && icsFormOpen)
+                      }
+                      confirmRemoveId={confirmRemoveId}
+                      removingId={removingId}
+                      removeError={removeError}
+                      onConnect={() => void handleConnect(provider.id)}
+                      onAskRemove={(id) => {
+                        setRemoveError(null);
+                        setConfirmRemoveId(id);
                       }}
-                    />
-                  )}
-                </ProviderCard>
-              );
-            })}
-          </div>
-        </section>
+                      onCancelRemove={() => setConfirmRemoveId(null)}
+                      onRemove={(id) => void handleRemove(id)}
+                    >
+                      {/* ICS: paste a calendar feed link */}
+                      {provider.id === "ics" && icsResult && (
+                        <p className="mt-3 flex items-center gap-2 text-sm text-emerald-800">
+                          <CheckCircle2 className="h-4 w-4 shrink-0" />
+                          {icsResult}
+                        </p>
+                      )}
+                      {provider.id === "ics" && (
+                        // The key clears the typed link after a successful add, so
+                        // "Add another" starts from an empty form.
+                        <IcsLinkForm
+                          key={icsAddedCount}
+                          open={icsFormOpen}
+                          submitting={icsSubmitting}
+                          error={icsError}
+                          onSubmit={(url, name) => void handleIcsSubmit(url, name)}
+                          onCancel={() => {
+                            setIcsFormOpen(false);
+                            setIcsError(null);
+                          }}
+                        />
+                      )}
+
+                      {/* Apple: Apple ID email + app-specific password */}
+                      {provider.id === "apple" && appleResult && (
+                        <p className="mt-3 flex items-center gap-2 text-sm text-emerald-800">
+                          <CheckCircle2 className="h-4 w-4 shrink-0" />
+                          {appleResult}
+                        </p>
+                      )}
+                      {provider.id === "apple" && (
+                        <AppleCredentialsForm
+                          key={appleAddedCount}
+                          open={appleFormOpen}
+                          submitting={appleSubmitting}
+                          error={appleError}
+                          onSubmit={(email, password) => void handleAppleSubmit(email, password)}
+                          onCancel={() => {
+                            setAppleFormOpen(false);
+                            setAppleError(null);
+                          }}
+                        />
+                      )}
+                    </ProviderCard>
+                  );
+                })}
+              </div>
+            </section>
+          </>
+        )}
       </main>
     </div>
   );
