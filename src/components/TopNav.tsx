@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
  * inside the scheduling page; pulled out once a second page (Profile) needed
  * the same bar so the two don't drift apart.
  */
-export default function TopNav({ wide = false }: { wide?: boolean }) {
+export default function TopNav() {
   const { pathname } = useLocation();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -46,15 +46,11 @@ export default function TopNav({ wide = false }: { wide?: boolean }) {
   };
 
   return (
-    <nav
-      className={cn(
-        "mx-auto flex items-center justify-between py-5",
-        // `wide` pages run edge to edge, so the bar takes the same responsive
-        // gutter as their content and its logo and links line up with what is
-        // underneath. Narrow pages keep the centred, capped bar.
-        wide ? "px-4 sm:px-6 lg:px-8" : "max-w-6xl px-6",
-      )}
-    >
+    // Edge to edge on every page, with the same responsive gutter as the
+    // full-width pages' content, so the logo and links sit in the same place
+    // wherever you are. (There used to be a narrower, centred variant; on a
+    // wide screen it pulled both ends inward and the bar jumped between pages.)
+    <nav className="flex items-center justify-between px-4 py-5 sm:px-6 lg:px-8">
       <Link to="/" className="flex items-center gap-2">
         {/* The wordmark, sized to read as a logo rather than as another nav
             link. It steps down on small screens: at 24px the name plus the
@@ -62,9 +58,15 @@ export default function TopNav({ wide = false }: { wide?: boolean }) {
         <span className="text-xl font-bold tracking-tight sm:text-2xl">casy</span>
       </Link>
       <div className="flex items-center gap-6 text-sm text-muted-foreground">
-        <a href="#" className="transition hover:text-foreground">
+        <Link
+          to="/how-it-works"
+          className={cn(
+            "transition hover:text-foreground",
+            pathname === "/how-it-works" && "text-foreground",
+          )}
+        >
           How it works
-        </a>
+        </Link>
         <Link
           to="/profile"
           onMouseEnter={prefetchProfile}

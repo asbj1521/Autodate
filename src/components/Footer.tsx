@@ -1,17 +1,23 @@
 import { Link } from "react-router-dom";
 
 /**
- * The bottom of every page. Its one job for now is the privacy link, which
- * has to be reachable from the home page for Google's consent screen.
+ * The bottom of every page: how Casy works, and the privacy link, which has
+ * to be reachable from the home page for Google's consent screen.
  */
 export default function Footer() {
   return (
     <footer className="border-t bg-background">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6 text-sm text-muted-foreground">
+      {/* The same edge-to-edge gutter as the nav, so both ends line up with it. */}
+      <div className="flex items-center justify-between px-4 py-6 text-sm text-muted-foreground sm:px-6 lg:px-8">
         <span>Casy</span>
-        <Link to="/privacy" className="transition hover:text-foreground">
-          Privacy
-        </Link>
+        <div className="flex items-center gap-5">
+          <Link to="/how-it-works" className="transition hover:text-foreground">
+            How it works
+          </Link>
+          <Link to="/privacy" className="transition hover:text-foreground">
+            Privacy
+          </Link>
+        </div>
       </div>
     </footer>
   );

@@ -189,7 +189,7 @@ export default function CalendarOverview() {
 
   return (
     <div className="min-h-screen bg-background">
-      <TopNav wide />
+      <TopNav />
 
       <main className="px-4 pb-20 pt-4 sm:px-6 lg:px-8">
         <Link

@@ -19,6 +19,7 @@ const Profile = lazy(() => import('@/pages/Profile'))
 const CalendarOverview = lazy(() => import('@/pages/CalendarOverview'))
 const SignIn = lazy(() => import('@/pages/SignIn'))
 const Privacy = lazy(() => import('@/pages/Privacy'))
+const HowItWorks = lazy(() => import('@/pages/HowItWorks'))
 // An invite link is often the very first page someone sees, so it stays out of
 // the entry chunk like the other pages reached by a deliberate click.
 const JoinGroup = lazy(() => import('@/pages/JoinGroup'))
@@ -40,6 +41,7 @@ function App() {
               <Route path="/" element={<FindDate />} />
               <Route path="/sign-in" element={<SignIn />} />
               <Route path="/privacy" element={<Privacy />} />
+              <Route path="/how-it-works" element={<HowItWorks />} />
               {/* The invite link. Signing in happens on the page itself, so
                   someone can see what they were invited to before deciding. */}
               <Route path="/join/:token" element={<JoinGroup />} />
