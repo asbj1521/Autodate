@@ -2,7 +2,9 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { User } from "lucide-react";
 
+import { adminStatusQuery } from "@/api/admin";
 import { calendarStatusQuery } from "@/api/calendarStatus";
+import { groupsQuery } from "@/api/groups";
 import { useAuth } from "@/context/auth";
 import { cn } from "@/lib/utils";
 
@@ -25,7 +27,8 @@ export default function TopNav({ wide = false }: { wide?: boolean }) {
 
   /**
    * Warm both halves of the profile page as soon as someone shows intent to go
-   * there: its code chunk, and the calendar status it opens by asking for.
+   * there: its code chunk, and the three answers it opens by asking for
+   * (calendar status, groups, and whether this person is an admin).
    * Supabase takes roughly a third of a second to answer, and a pointer
    * resting on a link is usually good for about that long, so the page tends
    * to have what it needs by the time it mounts. Hovering without clicking
@@ -38,6 +41,8 @@ export default function TopNav({ wide = false }: { wide?: boolean }) {
     if (onProfile || !user) return;
     void import("@/pages/Profile");
     void queryClient.prefetchQuery(calendarStatusQuery(user.id));
+    void queryClient.prefetchQuery(groupsQuery(user.id));
+    void queryClient.prefetchQuery(adminStatusQuery(user.id));
   };
 
   return (

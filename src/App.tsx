@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Footer from '@/components/Footer'
 import RequireAuth from '@/components/RequireAuth'
 import AuthProvider from '@/context/AuthProvider'
+import { persistQueries } from '@/lib/queryPersistence'
 import FindDate from '@/pages/FindDate'
 
 /**
@@ -23,6 +24,9 @@ const Privacy = lazy(() => import('@/pages/Privacy'))
 const JoinGroup = lazy(() => import('@/pages/JoinGroup'))
 
 const queryClient = new QueryClient()
+// Last known groups, calendar status and admin flag, shown at once on load
+// and refreshed in the background (see queryPersistence.ts).
+persistQueries(queryClient)
 
 function App() {
   return (

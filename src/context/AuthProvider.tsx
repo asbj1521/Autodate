@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { Session } from "@supabase/supabase-js";
 
 import { AuthContext, type AuthState } from "@/context/auth";
+import { clearPersistedQueries } from "@/lib/queryPersistence";
 import { supabase } from "@/lib/supabase";
 
 /**
@@ -25,7 +26,11 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       // Cached answers belong to whoever asked for them. Dropping them on
       // sign-out means the next person on this browser never sees them.
-      if (event === "SIGNED_OUT") queryClient.clear();
+      // The copies remembered on the device go with them.
+      if (event === "SIGNED_OUT") {
+        queryClient.clear();
+        clearPersistedQueries();
+      }
     });
     return () => data.subscription.unsubscribe();
   }, [queryClient]);

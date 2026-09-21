@@ -37,6 +37,9 @@ import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
 
 type Db = ReturnType<typeof supabaseAdmin>;
 
+/** Supabase's edge runtime: keeps the function alive for work after the response. */
+declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
+
 /** Same cap as calendar-busy: a month grid needs 42 days, the search a year. */
 const MAX_RANGE_DAYS = 400;
 const PAGE_SIZE = 1000; // PostgREST's default row cap per request
@@ -69,63 +72,70 @@ async function rememberName(db: Db, user: NameableUser & { id: string }): Promis
   if (error) console.error("profiles upsert failed", error);
 }
 
-/** The groups this person is in, each with its members' names. */
-async function listGroups(db: Db, profileId: string) {
+/**
+ * The groups this person is in, each with its members' names.
+ *
+ * Two round trips whatever the number of groups: one for the groups with all
+ * their members (embedded through the foreign keys), one for the names.
+ * `callerName` is the caller's own name straight from their login, so they
+ * are named correctly even before rememberName's write has landed.
+ */
+async function listGroups(db: Db, profileId: string, callerName: string) {
+  type Row = {
+    friend_groups: {
+      id: string;
+      name: string;
+      created_at: string;
+      created_by: string | null;
+      group_members: { profile_id: string; joined_at: string }[];
+    } | null;
+  };
   const { data: mine, error: mineErr } = await db
     .from("group_members")
-    .select("group_id")
+    .select("friend_groups(id, name, created_at, created_by, group_members(profile_id, joined_at))")
     .eq("profile_id", profileId);
   if (mineErr) throw mineErr;
 
-  const groupIds = (mine ?? []).map((r: { group_id: string }) => r.group_id);
-  if (groupIds.length === 0) return [];
+  // A to-one embed comes back as a single row, which the untyped client
+  // can't know; hence the cast.
+  const groups = ((mine ?? []) as unknown as Row[])
+    .map((r) => r.friend_groups)
+    .filter((g): g is NonNullable<Row["friend_groups"]> => !!g)
+    .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+  if (groups.length === 0) return [];
 
-  const { data: groups, error: groupsErr } = await db
-    .from("friend_groups")
-    .select("id, name, created_at, created_by")
-    .in("id", groupIds)
-    .order("created_at", { ascending: true });
-  if (groupsErr) throw groupsErr;
+  const memberIds = [
+    ...new Set(groups.flatMap((g) => g.group_members.map((m) => m.profile_id))),
+  ].filter((id) => id !== profileId);
+  const nameById = new Map<string, string | null>();
+  if (memberIds.length > 0) {
+    const { data: names, error: namesErr } = await db
+      .from("profiles")
+      .select("id, display_name")
+      .in("id", memberIds);
+    if (namesErr) throw namesErr;
+    for (const p of (names ?? []) as { id: string; display_name: string | null }[]) {
+      nameById.set(p.id, p.display_name);
+    }
+  }
 
-  // Every member of those groups in one query, then names in a second. Two
-  // round trips whatever the number of groups, rather than two per group.
-  const { data: members, error: membersErr } = await db
-    .from("group_members")
-    .select("group_id, profile_id, joined_at")
-    .in("group_id", groupIds)
-    .order("joined_at", { ascending: true });
-  if (membersErr) throw membersErr;
-
-  const memberIds = [...new Set((members ?? []).map((m: { profile_id: string }) => m.profile_id))];
-  const { data: names, error: namesErr } = await db
-    .from("profiles")
-    .select("id, display_name")
-    .in("id", memberIds);
-  if (namesErr) throw namesErr;
-  const nameById = new Map(
-    (names ?? []).map((p: { id: string; display_name: string | null }) => [p.id, p.display_name]),
-  );
-
-  return (groups ?? []).map(
-    (g: { id: string; name: string; created_at: string; created_by: string | null }) => ({
-      id: g.id,
-      name: g.name,
-      createdAt: g.created_at,
-      // Whoever made the group, so the frontend can offer them (and only
-      // them) the delete action below. Grants nothing by itself — every
-      // membership check still runs — but this is the one place a group's
-      // history is visible in the API rather than only in the database.
-      createdBy: g.created_by,
-      members: (members ?? [])
-        .filter((m: { group_id: string }) => m.group_id === g.id)
-        .map((m: { profile_id: string; joined_at: string }) => ({
-          profileId: m.profile_id,
-          name: nameById.get(m.profile_id) ?? "Someone",
-          isYou: m.profile_id === profileId,
-          joinedAt: m.joined_at,
-        })),
-    }),
-  );
+  return groups.map((g) => ({
+    id: g.id,
+    name: g.name,
+    createdAt: g.created_at,
+    // Whoever made the group, so the frontend can offer them (and only
+    // them) the delete action. Grants nothing by itself; every membership
+    // check still runs.
+    createdBy: g.created_by,
+    members: [...g.group_members]
+      .sort((a, b) => Date.parse(a.joined_at) - Date.parse(b.joined_at))
+      .map((m) => ({
+        profileId: m.profile_id,
+        name: m.profile_id === profileId ? callerName : (nameById.get(m.profile_id) ?? "Someone"),
+        isYou: m.profile_id === profileId,
+        joinedAt: m.joined_at,
+      })),
+  }));
 }
 
 /** True if this person is in this group. Checked before every group action. */
@@ -176,38 +186,48 @@ async function groupBusy(db: Db, memberIds: string[], from: Date, to: Date) {
   const sourceIds = [...ownerOf.keys()];
   let truncated = false;
   if (sourceIds.length > 0) {
-    for (let page = 0; ; page++) {
-      if (page >= MAX_PAGES) {
-        truncated = true;
-        break;
-      }
-      // Overlap test: a block is in range if it starts before the range ends
-      // and ends after the range starts.
-      const { data, error } = await db
+    // Overlap test: a block is in range if it starts before the range ends
+    // and ends after the range starts.
+    const fetchPage = (page: number, withCount = false) =>
+      db
         .from("calendar_busy_cache")
-        .select("source_id, start_at, end_at")
+        .select("source_id, start_at, end_at", withCount ? { count: "exact" } : undefined)
         .in("source_id", sourceIds)
         .lt("start_at", to.toISOString())
         .gt("end_at", from.toISOString())
         .order("start_at", { ascending: true })
         .order("id", { ascending: true }) // stable paging when start times tie
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
-      if (error) throw error;
-      for (const r of data ?? []) {
-        const owner = ownerOf.get(r.source_id);
-        if (!owner) continue;
-        busyByMember.get(owner)?.push({
-          start: r.start_at,
-          end: r.end_at,
-          // Work and school are the "soft" kinds the multi-day rules treat as
-          // time you could take off; everything else is simply busy. The label
-          // is the category, not the calendar's name.
-          ...(purposeOf.get(r.source_id) === "work" || purposeOf.get(r.source_id) === "school"
-            ? { category: purposeOf.get(r.source_id) }
-            : {}),
-        });
-      }
-      if ((data ?? []).length < PAGE_SIZE) break;
+
+    // The first page also says how many blocks there are in total, so every
+    // other page can be asked for at once instead of one after another.
+    const first = await fetchPage(0, true);
+    if (first.error) throw first.error;
+    const total = first.count ?? (first.data ?? []).length;
+    const pagesNeeded = Math.ceil(total / PAGE_SIZE);
+    truncated = pagesNeeded > MAX_PAGES;
+    const extraPages = Math.max(0, Math.min(pagesNeeded, MAX_PAGES) - 1);
+    const rest = await Promise.all(
+      Array.from({ length: extraPages }, (_, i) => fetchPage(i + 1)),
+    );
+    const rows = [first, ...rest].flatMap((res) => {
+      if (res.error) throw res.error;
+      return res.data ?? [];
+    });
+
+    for (const r of rows) {
+      const owner = ownerOf.get(r.source_id);
+      if (!owner) continue;
+      busyByMember.get(owner)?.push({
+        start: r.start_at,
+        end: r.end_at,
+        // Work and school are the "soft" kinds the multi-day rules treat as
+        // time you could take off; everything else is simply busy. The label
+        // is the category, not the calendar's name.
+        ...(purposeOf.get(r.source_id) === "work" || purposeOf.get(r.source_id) === "school"
+          ? { category: purposeOf.get(r.source_id) }
+          : {}),
+      });
     }
   }
 
@@ -278,12 +298,15 @@ Deno.serve(async (req) => {
   const caller = await callerUser(req, db);
   if (!caller) return json({ error: "Please sign in again." }, 401);
   const profileId = caller.id;
-  await rememberName(db, caller);
+  const callerName = displayNameFor(caller);
+  // Saved in the background: nothing below waits on it, since the caller's
+  // own name is taken straight from their login wherever it is shown.
+  EdgeRuntime.waitUntil(rememberName(db, caller));
 
   try {
     switch (action) {
       case "list": {
-        return json({ groups: await listGroups(db, profileId) });
+        return json({ groups: await listGroups(db, profileId, callerName) });
       }
 
       case "create": {
@@ -307,7 +330,7 @@ Deno.serve(async (req) => {
           await db.from("friend_groups").delete().eq("id", group.id);
           return json({ error: memberErr.message }, 400);
         }
-        return json({ groups: await listGroups(db, profileId), createdId: group.id });
+        return json({ groups: await listGroups(db, profileId, callerName), createdId: group.id });
       }
 
       case "invite": {
@@ -380,7 +403,7 @@ Deno.serve(async (req) => {
             .insert({ group_id: invite.group_id, profile_id: profileId });
           if (joinErr) return json({ error: joinErr.message }, 400);
         }
-        return json({ groups: await listGroups(db, profileId), joinedId: invite.group_id });
+        return json({ groups: await listGroups(db, profileId, callerName), joinedId: invite.group_id });
       }
 
       case "leave": {
@@ -396,7 +419,7 @@ Deno.serve(async (req) => {
         if (outcome === "not_a_member") {
           return json({ error: "You are not in that group." }, 403);
         }
-        return json({ groups: await listGroups(db, profileId), outcome });
+        return json({ groups: await listGroups(db, profileId, callerName), outcome });
       }
 
       case "delete": {
@@ -421,7 +444,7 @@ Deno.serve(async (req) => {
         // friend_groups migration's foreign keys), so nothing else to clean up.
         const { error: deleteErr } = await db.from("friend_groups").delete().eq("id", groupId);
         if (deleteErr) throw deleteErr;
-        return json({ groups: await listGroups(db, profileId), outcome: "deleted" });
+        return json({ groups: await listGroups(db, profileId, callerName), outcome: "deleted" });
       }
 
       case "busy": {
@@ -437,15 +460,16 @@ Deno.serve(async (req) => {
         }
         // Only a member may read a group's availability, and the membership
         // check is what decides it: holding the group's id proves nothing.
-        if (!(await isMember(db, groupId, profileId))) {
-          return json({ error: "You are not in that group." }, 403);
-        }
+        // One query answers both "who is in it" and "is the caller in it".
         const { data: members, error: membersErr } = await db
           .from("group_members")
           .select("profile_id")
           .eq("group_id", groupId);
         if (membersErr) throw membersErr;
         const memberIds = (members ?? []).map((m: { profile_id: string }) => m.profile_id);
+        if (!memberIds.includes(profileId)) {
+          return json({ error: "You are not in that group." }, 403);
+        }
         return json(await groupBusy(db, memberIds, from, to));
       }
 

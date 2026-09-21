@@ -23,7 +23,10 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { displayNameFor } from "../_shared/groups.ts";
 import { encryptionKeyFromEnv } from "../_shared/secretBox.ts";
 import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
-import { syncConnection, type SyncTarget } from "../_shared/sync.ts";
+// Only the type here. The sync code itself (with ical.js and an XML parser
+// behind it) is imported inside "syncConnection", so the everyday calls,
+// "status" above all, don't pay for loading it on a cold start.
+import type { SyncTarget } from "../_shared/sync.ts";
 
 type Db = ReturnType<typeof supabaseAdmin>;
 
@@ -298,6 +301,7 @@ Deno.serve(async (req) => {
           return json({ error: "Syncing isn't set up on the server yet." }, 500);
         }
         console.log(`admin ${caller.id} re-synced connection ${connectionId}`);
+        const { syncConnection } = await import("../_shared/sync.ts");
         // Never throws; the outcome is recorded on the connection either way.
         return json(await syncConnection(db, target as SyncTarget, key));
       }

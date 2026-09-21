@@ -21,9 +21,11 @@ import {
   adminSyncConnection,
   type AdminConnection,
   type AdminGroup,
+  type AdminOverview,
   type AdminUser,
 } from "@/api/admin";
 import StatTile from "@/components/StatTile";
+import { withoutGroup, withoutMember, withoutUser } from "@/lib/adminOverview";
 import { plural, syncedAgo } from "@/lib/accountSummary";
 import { avatarColor } from "@/lib/avatar";
 import { formatDate } from "@/lib/format";
@@ -439,27 +441,38 @@ export default function AdminPanel({ youId }: { youId: string }) {
   // Read once: "synced 5 min ago" doesn't need to tick while the panel is open.
   const [now] = useState(Date.now);
 
-  // Anything an admin changes can also change what the rest of the page (and
-  // the scheduling page) shows for the admin's own account.
-  const afterChange = async () => {
+  /**
+   * After an action succeeds: patch the overview on screen at once, so the
+   * row is gone the moment the server says so, then fetch the real overview
+   * in the background without making anyone wait for it. Anything an admin
+   * changes can also change what the admin's own groups look like elsewhere.
+   */
+  const afterChange = (patch: (o: AdminOverview) => AdminOverview) => {
+    queryClient.setQueryData<AdminOverview>(adminOverviewKey(youId), (o) => (o ? patch(o) : o));
     setConfirm(null);
     setConfirmUserId(null);
-    await queryClient.invalidateQueries({ queryKey: adminOverviewKey(youId) });
+    void queryClient.invalidateQueries({ queryKey: adminOverviewKey(youId) });
     void queryClient.invalidateQueries({ queryKey: ["groups"] });
     void queryClient.invalidateQueries({ queryKey: ["group-busy"] });
   };
 
-  const deleteMutation = useMutation({ mutationFn: adminDeleteGroup, onSuccess: afterChange });
-  const removeMutation = useMutation({ mutationFn: adminRemoveMember, onSuccess: afterChange });
+  const deleteMutation = useMutation({
+    mutationFn: adminDeleteGroup,
+    onSuccess: (_res, groupId) => afterChange((o) => withoutGroup(o, groupId)),
+  });
+  const removeMutation = useMutation({
+    mutationFn: adminRemoveMember,
+    onSuccess: (_res, { groupId, profileId }) => afterChange((o) => withoutMember(o, groupId, profileId)),
+  });
   const deleteUserMutation = useMutation({
     mutationFn: adminDeleteUser,
-    onSuccess: async (res, profileId) => {
+    onSuccess: (res, profileId) => {
       const who = data?.users.find((u) => u.id === profileId)?.name ?? "The account";
       setNotice(
         `${who} was deleted` +
           (res.deletedGroups > 0 ? `, along with ${plural(res.deletedGroups, "group")} only they were in.` : "."),
       );
-      await afterChange();
+      afterChange((o) => withoutUser(o, profileId));
     },
   });
   const syncMutation = useMutation({

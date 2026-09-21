@@ -71,8 +71,10 @@ export function adminStatusQuery(userId: string) {
           errorMessage: "Couldn't check admin access",
         })
       ).isAdmin,
-    // Being an admin changes only when the secret does; no need to keep asking.
-    staleTime: Infinity,
+    // Being an admin changes only when the secret does, so asking now and then
+    // is plenty. Not never: the answer is remembered across reloads (see
+    // queryPersistence.ts), and a remembered "yes" must still be re-checked.
+    staleTime: 5 * 60_000,
     retry: false,
   });
 }
