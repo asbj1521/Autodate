@@ -54,19 +54,10 @@ export default function TopNav() {
       <Link to="/" className="flex items-center gap-2">
         {/* The wordmark, sized to read as a logo rather than as another nav
             link. It steps down on small screens: at 24px the name plus the
-            three links is wider than a narrow phone, and the row would wrap. */}
+            links is wider than a narrow phone, and the row would wrap. */}
         <span className="text-xl font-bold tracking-tight sm:text-2xl">casy</span>
       </Link>
       <div className="flex items-center gap-6 text-sm text-muted-foreground">
-        <Link
-          to="/how-it-works"
-          className={cn(
-            "transition hover:text-foreground",
-            pathname === "/how-it-works" && "text-foreground",
-          )}
-        >
-          How it works
-        </Link>
         <Link
           to="/profile"
           onMouseEnter={prefetchProfile}
