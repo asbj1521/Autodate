@@ -83,7 +83,6 @@ export const en: Messages = {
     hintSignIn: "Sign in and make a group to suggest events.",
     hintExample: "Make a group to suggest events to real people.",
     hintNoDate: "No date to suggest with these settings. Try changing them.",
-    hintPressFind: "Press Find best time, then suggest the date to your group.",
     hintEveryone: "Everyone in the group gets it to accept or decline.",
     copyLink: "Copy link",
     copiedLink: "Copied!",

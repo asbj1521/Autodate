@@ -772,28 +772,38 @@ export default function FindDate() {
                   )}
                   {suggestedThis ? t.scheduler.suggested : t.scheduler.suggest}
                 </button>
-                <p className="mt-2 text-center text-xs text-muted-foreground">
-                  {suggestedThis ? (
-                    t.scheduler.sent(
-                      <Link
-                        to="/events"
-                        className="font-medium text-foreground underline underline-offset-2"
-                      >
-                        {t.scheduler.sentLink}
-                      </Link>,
-                    )
-                  ) : suggestError ? (
-                    <span className="text-red-700">{suggestError}</span>
-                  ) : !user ? (
-                    t.scheduler.hintSignIn
-                  ) : activeGroup?.isExample ? (
-                    t.scheduler.hintExample
-                  ) : !activeSlot ? (
-                    hasSearched ? t.scheduler.hintNoDate : t.scheduler.hintPressFind
-                  ) : (
-                    t.scheduler.hintEveryone
-                  )}
-                </p>
+                {/* Nothing shows before a first search on a real group: the
+                    "press Find best time" nudge was redundant with the button
+                    right above it. */}
+                {(suggestedThis ||
+                  suggestError ||
+                  !user ||
+                  activeGroup?.isExample ||
+                  activeSlot ||
+                  hasSearched) && (
+                  <p className="mt-2 text-center text-xs text-muted-foreground">
+                    {suggestedThis ? (
+                      t.scheduler.sent(
+                        <Link
+                          to="/events"
+                          className="font-medium text-foreground underline underline-offset-2"
+                        >
+                          {t.scheduler.sentLink}
+                        </Link>,
+                      )
+                    ) : suggestError ? (
+                      <span className="text-red-700">{suggestError}</span>
+                    ) : !user ? (
+                      t.scheduler.hintSignIn
+                    ) : activeGroup?.isExample ? (
+                      t.scheduler.hintExample
+                    ) : !activeSlot ? (
+                      t.scheduler.hintNoDate
+                    ) : (
+                      t.scheduler.hintEveryone
+                    )}
+                  </p>
+                )}
               </div>
             )}
 

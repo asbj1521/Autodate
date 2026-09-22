@@ -91,7 +91,6 @@ export const da = {
     hintSignIn: "Log ind og lav en gruppe for at foreslå aftaler.",
     hintExample: "Lav en gruppe for at foreslå aftaler til rigtige mennesker.",
     hintNoDate: "Ingen dato at foreslå med disse indstillinger. Prøv at ændre dem.",
-    hintPressFind: "Tryk på Find bedste tid, og foreslå så datoen til din gruppe.",
     hintEveryone: "Alle i gruppen får den og kan sige ja eller nej.",
     copyLink: "Kopiér link",
     copiedLink: "Kopieret!",

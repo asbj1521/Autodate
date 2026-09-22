@@ -67,19 +67,63 @@ Deno.serve(withLanguage(async (req) => {
   const profileId = await callerId(req, db);
   if (!profileId) return json({ error: "Please sign in again." }, 401);
 
-  const { data: sources, error: sourcesErr } = await db
-    .from("calendar_sources")
-    .select(
-      "id, display_name, purpose, calendar_connections!inner(id, provider, account_label, status, profile_id)",
-    )
-    .eq("calendar_connections.profile_id", profileId)
-    .eq("calendar_connections.status", "connected");
-  if (sourcesErr) {
-    console.error("calendar-busy sources query failed", sourcesErr);
+  // The blocks query used to wait for the sources query so it could filter
+  // by source id; it now reaches the same rows through a nested join on
+  // profile_id/status, so the two can run together instead of one after the
+  // other (one fewer round trip on every load of this page).
+  async function fetchBlocks(): Promise<{
+    blocks: { calendarId: string; start: string; end: string }[];
+    truncated: boolean;
+  }> {
+    const blocks: { calendarId: string; start: string; end: string }[] = [];
+    for (let page = 0; ; page++) {
+      if (page >= MAX_PAGES) return { blocks, truncated: true };
+      // Overlap test: a block belongs to the range if it starts before the
+      // range ends and ends after the range starts.
+      const { data, error } = await db
+        .from("calendar_busy_cache")
+        .select(
+          "source_id, start_at, end_at, calendar_sources!inner(calendar_connections!inner(profile_id, status))",
+        )
+        .eq("calendar_sources.calendar_connections.profile_id", profileId)
+        .eq("calendar_sources.calendar_connections.status", "connected")
+        .lt("start_at", to.toISOString())
+        .gt("end_at", from.toISOString())
+        .order("start_at", { ascending: true })
+        .order("id", { ascending: true }) // stable paging when start times tie
+        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+      if (error) throw error;
+      for (const r of data ?? []) {
+        blocks.push({ calendarId: r.source_id, start: r.start_at, end: r.end_at });
+      }
+      if ((data ?? []).length < PAGE_SIZE) return { blocks, truncated: false };
+    }
+  }
+
+  const [sourcesResult, blocksResult] = await Promise.allSettled([
+    db
+      .from("calendar_sources")
+      .select(
+        "id, display_name, purpose, calendar_connections!inner(id, provider, account_label, status, profile_id)",
+      )
+      .eq("calendar_connections.profile_id", profileId)
+      .eq("calendar_connections.status", "connected"),
+    fetchBlocks(),
+  ]);
+
+  if (sourcesResult.status === "rejected" || sourcesResult.value.error) {
+    console.error(
+      "calendar-busy sources query failed",
+      sourcesResult.status === "rejected" ? sourcesResult.reason : sourcesResult.value.error,
+    );
+    return json({ error: "Query failed" }, 500);
+  }
+  if (blocksResult.status === "rejected") {
+    console.error("calendar-busy blocks query failed", blocksResult.reason);
     return json({ error: "Query failed" }, 500);
   }
 
-  const calendars = ((sources ?? []) as SourceRow[])
+  const calendars = ((sourcesResult.value.data ?? []) as SourceRow[])
     .map((s) => ({
       id: s.id,
       name: s.display_name ?? "Calendar",
@@ -93,36 +137,5 @@ Deno.serve(withLanguage(async (req) => {
         (a.account ?? "").localeCompare(b.account ?? "") || a.name.localeCompare(b.name),
     );
 
-  const blocks: { calendarId: string; start: string; end: string }[] = [];
-  let truncated = false;
-  if (calendars.length > 0) {
-    const ids = calendars.map((c) => c.id);
-    for (let page = 0; ; page++) {
-      if (page >= MAX_PAGES) {
-        truncated = true;
-        break;
-      }
-      // Overlap test: a block belongs to the range if it starts before the
-      // range ends and ends after the range starts.
-      const { data, error } = await db
-        .from("calendar_busy_cache")
-        .select("source_id, start_at, end_at")
-        .in("source_id", ids)
-        .lt("start_at", to.toISOString())
-        .gt("end_at", from.toISOString())
-        .order("start_at", { ascending: true })
-        .order("id", { ascending: true }) // stable paging when start times tie
-        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
-      if (error) {
-        console.error("calendar-busy blocks query failed", error);
-        return json({ error: "Query failed" }, 500);
-      }
-      for (const r of data ?? []) {
-        blocks.push({ calendarId: r.source_id, start: r.start_at, end: r.end_at });
-      }
-      if ((data ?? []).length < PAGE_SIZE) break;
-    }
-  }
-
-  return json({ calendars, blocks, truncated });
+  return json({ calendars, ...blocksResult.value });
 }));

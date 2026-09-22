@@ -75,6 +75,7 @@ function GroupRow({
   // useSchedulingGroups / leave_friend_group), so a separate delete button
   // would just be a second way to do the same thing.
   const soleMember = group.members.length <= 1;
+  const canDelete = isCreator && !soleMember;
   const busy = leaving || deleting;
   const [copied, setCopied] = useState(false);
 
@@ -94,7 +95,13 @@ function GroupRow({
       {/* On a phone the actions wrap onto their own line under the name, so
           the name isn't squeezed down to a few letters. */}
       <div className="flex flex-wrap items-start gap-x-3 gap-y-3 sm:flex-nowrap">
-        <div className="flex shrink-0 -space-x-2">
+        {/* Fixed width regardless of member count (1 to 4 avatars, plus a
+            "+N" badge past 4), so the group name starts at the same spot
+            on every row instead of drifting with the avatar count. Right
+            aligned so the avatars sit right next to the name; any leftover
+            space lands before the avatars instead of between them and the
+            name. */}
+        <div className="flex w-32 shrink-0 justify-end -space-x-2">
           {group.members.slice(0, 4).map((m, i) => (
             <span
               key={m.profileId}
@@ -161,16 +168,22 @@ function GroupRow({
           >
             <LogOut className="h-3.5 w-3.5" />
           </button>
-          {isCreator && !soleMember && (
-            <button
-              type="button"
-              onClick={onAskDelete}
-              title={t.groupsSection.deleteTitle}
-              className="flex h-8 w-8 items-center justify-center rounded-full border bg-background text-muted-foreground transition hover:bg-red-50 hover:text-red-700"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
-          )}
+          {/* Always reserve this button's space, even when it doesn't apply
+              to this group, so the invite-link button lines up at the same
+              spot on every row instead of drifting with who can delete. */}
+          <button
+            type="button"
+            onClick={canDelete ? onAskDelete : undefined}
+            title={canDelete ? t.groupsSection.deleteTitle : undefined}
+            aria-hidden={!canDelete}
+            tabIndex={canDelete ? 0 : -1}
+            className={cn(
+              "flex h-8 w-8 items-center justify-center rounded-full border bg-background text-muted-foreground transition hover:bg-red-50 hover:text-red-700",
+              !canDelete && "invisible",
+            )}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
 
