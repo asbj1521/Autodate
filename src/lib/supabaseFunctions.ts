@@ -6,6 +6,7 @@
  * signed-in person's access token, which is how a function knows whose
  * calendars it is looking at: nothing in the request body says so any more.
  */
+import { currentLang, currentMessages } from "@/i18n/current";
 import { supabase } from "@/lib/supabase";
 
 export const SUPABASE_FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
@@ -51,6 +52,10 @@ export async function callFunction<T>(
   for (const [key, value] of Object.entries(params ?? {})) {
     url.searchParams.set(key, value);
   }
+  // Which language the function should answer in. A query parameter rather
+  // than a header: a new header would need every function's CORS allow-list
+  // updated first, or the browser would refuse the call.
+  url.searchParams.set("lang", currentLang());
 
   const headers = await functionHeaders();
   const res = await fetch(
@@ -68,10 +73,11 @@ export async function callFunction<T>(
   // body that won't parse is not itself an error worth reporting.
   const parsed = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(
-      (parsed as { error?: string }).error ??
-        `${errorMessage ?? `${name} failed`} (HTTP ${res.status})`,
-    );
+    const own = (parsed as { error?: string }).error;
+    const fallback = errorMessage
+      ? `${errorMessage} (HTTP ${res.status})`
+      : currentMessages().api.failed(name, res.status);
+    throw new Error(own ?? fallback);
   }
   return parsed as T;
 }

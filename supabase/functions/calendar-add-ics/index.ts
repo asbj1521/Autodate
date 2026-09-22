@@ -23,6 +23,7 @@ import { assertSafeFeedUrl, fetchFeedText, IcsError, parseBusyIntervals } from "
 import { encryptionKeyFromEnv, encryptSecret, lookupHash } from "../_shared/secretBox.ts";
 import { storeCalendars } from "../_shared/storeCalendars.ts";
 import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
+import { withLanguage } from "../_shared/i18n.ts";
 
 // How far ahead to sync. Same window as the Google and Outlook callbacks.
 const SYNC_MONTHS_AHEAD = 12;
@@ -45,7 +46,7 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withLanguage(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -140,4 +141,4 @@ Deno.serve(async (req) => {
   }
 
   return json({ connectionId, label, busyBlocks: parsed.intervals.length });
-});
+}));

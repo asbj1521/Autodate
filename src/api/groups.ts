@@ -14,6 +14,7 @@ import { queryOptions } from "@tanstack/react-query";
 
 import { callFunction } from "@/lib/supabaseFunctions";
 import type { BusyInterval, EventCategory } from "@/types";
+import { currentMessages } from "@/i18n/current";
 
 /** One person in a group, as other members see them: a name, nothing more. */
 export interface GroupMember {
@@ -67,7 +68,7 @@ export function groupsQuery(userId: string) {
     queryFn: async (): Promise<Group[]> => {
       const body = await callFunction<{ groups?: Group[] }>("groups", {
         body: { action: "list" },
-        errorMessage: "Couldn't load your groups",
+        errorMessage: currentMessages().api.loadGroups,
       });
       return body.groups ?? [];
     },
@@ -82,7 +83,7 @@ export function groupBusyQuery(userId: string, groupId: string | null, from: str
     queryFn: async (): Promise<GroupBusy> =>
       await callFunction<GroupBusy>("groups", {
         body: { action: "busy", groupId, from, to },
-        errorMessage: "Couldn't load the group's calendars",
+        errorMessage: currentMessages().api.loadGroupCalendars,
       }),
     enabled: !!groupId,
     staleTime: 60_000,
@@ -92,7 +93,7 @@ export function groupBusyQuery(userId: string, groupId: string | null, from: str
 export async function createGroup(name: string): Promise<{ groups: Group[]; createdId: string }> {
   return await callFunction("groups", {
     body: { action: "create", name },
-    errorMessage: "Couldn't create the group",
+    errorMessage: currentMessages().api.createGroup,
   });
 }
 
@@ -112,7 +113,7 @@ export function whoAmIQuery(userId: string) {
     queryFn: async (): Promise<{ name: string }> =>
       await callFunction<{ name: string }>("groups", {
         body: { action: "whoami" },
-        errorMessage: "Couldn't load your profile",
+        errorMessage: currentMessages().api.loadProfile,
       }),
     staleTime: 60_000,
   });
@@ -122,7 +123,7 @@ export function whoAmIQuery(userId: string) {
 export async function setDisplayName(name: string): Promise<{ name: string }> {
   return await callFunction("groups", {
     body: { action: "set-name", name },
-    errorMessage: "Couldn't update your name",
+    errorMessage: currentMessages().api.setName,
   });
 }
 
@@ -130,7 +131,7 @@ export async function setDisplayName(name: string): Promise<{ name: string }> {
 export async function renameGroup(groupId: string, name: string): Promise<{ groups: Group[] }> {
   return await callFunction("groups", {
     body: { action: "rename", groupId, name },
-    errorMessage: "Couldn't rename the group",
+    errorMessage: currentMessages().api.renameGroup,
   });
 }
 
@@ -138,7 +139,7 @@ export async function renameGroup(groupId: string, name: string): Promise<{ grou
 export async function createInvite(groupId: string): Promise<{ url: string; expiresAt: string }> {
   return await callFunction("groups", {
     body: { action: "invite", groupId },
-    errorMessage: "Couldn't make an invite link",
+    errorMessage: currentMessages().api.invite,
   });
 }
 
@@ -148,14 +149,14 @@ export async function previewInvite(
 ): Promise<{ group: { id: string; name: string; memberCount: number } }> {
   return await callFunction("groups", {
     body: { action: "preview", token },
-    errorMessage: "Couldn't open that invite",
+    errorMessage: currentMessages().api.preview,
   });
 }
 
 export async function joinGroup(token: string): Promise<{ groups: Group[]; joinedId: string }> {
   return await callFunction("groups", {
     body: { action: "join", token },
-    errorMessage: "Couldn't join the group",
+    errorMessage: currentMessages().api.joinGroup,
   });
 }
 
@@ -165,7 +166,7 @@ export async function leaveGroup(
 ): Promise<{ groups: Group[]; outcome: "left" | "group_deleted" }> {
   return await callFunction("groups", {
     body: { action: "leave", groupId },
-    errorMessage: "Couldn't leave the group",
+    errorMessage: currentMessages().api.leaveGroup,
   });
 }
 
@@ -177,7 +178,7 @@ export async function leaveGroup(
 export async function deleteGroup(groupId: string): Promise<{ groups: Group[]; outcome: "deleted" }> {
   return await callFunction("groups", {
     body: { action: "delete", groupId },
-    errorMessage: "Couldn't delete the group",
+    errorMessage: currentMessages().api.deleteGroup,
   });
 }
 
@@ -190,12 +191,17 @@ export async function deleteGroup(groupId: string): Promise<{ groups: Group[]; o
  * They are dropped from the participant list instead, and the page says who
  * is missing rather than counting them as free.
  */
-export function participantsFromGroup(group: Group, data: GroupBusy | undefined) {
+export function participantsFromGroup(
+  group: Group,
+  data: GroupBusy | undefined,
+  /** How to mark you in the list, e.g. "Asbjørn (dig)"; unmarked if omitted. */
+  markYou: (name: string) => string = (name) => name,
+) {
   const connected = group.members.filter((m) => data?.connected[m.profileId]);
   return {
     participants: connected.map((m) => ({
       profileId: m.profileId,
-      name: m.isYou ? `${m.name} (you)` : m.name,
+      name: m.isYou ? markYou(m.name) : m.name,
       busy: (data?.busy[m.profileId] ?? []) as BusyInterval[],
     })),
     /** Members left out because they have not linked a calendar yet. */

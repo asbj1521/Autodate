@@ -19,6 +19,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { encryptionKeyFromEnv } from "../_shared/secretBox.ts";
 import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
 import { syncConnection, type SyncOutcome, type SyncTarget } from "../_shared/sync.ts";
+import { withLanguage } from "../_shared/i18n.ts";
 
 /** Supabase's edge runtime: keeps the function alive for work after the response. */
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
@@ -46,7 +47,7 @@ function sameSecret(a: string, b: string): boolean {
   return diff === 0;
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withLanguage(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -109,7 +110,7 @@ Deno.serve(async (req) => {
   const results: SyncOutcome[] = [];
   for (const target of due) results.push(await syncConnection(db, target, encryptionKey));
   return json({ results, skipped: (data ?? []).length - due.length });
-});
+}));
 
 async function runScheduled(
   db: ReturnType<typeof supabaseAdmin>,

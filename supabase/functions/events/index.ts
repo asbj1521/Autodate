@@ -21,6 +21,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { cleanEventTitle, isEventSettings, parseEventDate } from "../_shared/events.ts";
 import { displayNameFor } from "../_shared/groups.ts";
 import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
+import { withLanguage } from "../_shared/i18n.ts";
 
 type Db = ReturnType<typeof supabaseAdmin>;
 
@@ -185,7 +186,7 @@ async function listEvents(db: Db, profileId: string, callerName: string) {
   });
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withLanguage(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Use POST" }, 405);
 
@@ -324,4 +325,4 @@ Deno.serve(async (req) => {
     console.error(`events ${action} failed`, err);
     return json({ error: "Something went wrong. Please try again." }, 500);
   }
-});
+}));

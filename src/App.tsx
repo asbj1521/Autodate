@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Footer from '@/components/Footer'
 import RequireAuth from '@/components/RequireAuth'
 import AuthProvider from '@/context/AuthProvider'
+import LanguageProvider from '@/i18n/LanguageProvider'
 import { persistQueries } from '@/lib/queryPersistence'
 import FindDate from '@/pages/FindDate'
 
@@ -36,55 +37,57 @@ persistQueries(queryClient)
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <BrowserRouter>
-          {/* Plain background rather than a spinner: these chunks are small, and
-              a flash of "Loading…" would read as slower than a beat of nothing. */}
-          <Suspense fallback={<div className="min-h-screen bg-background" />}>
-            <Routes>
-              <Route path="/" element={<FindDate />} />
-              <Route path="/sign-in" element={<SignIn />} />
-              <Route path="/privacy" element={<Privacy />} />
-              <Route path="/how-it-works" element={<HowItWorks />} />
-              <Route path="/help/connect-icloud" element={<ConnectIcloudHelp />} />
-              <Route path="/help/connect-ics" element={<ConnectIcsHelp />} />
-              <Route path="/help/connect-google" element={<ConnectGoogleHelp />} />
-              <Route path="/help/connect-outlook" element={<ConnectOutlookHelp />} />
-              {/* The invite link. Signing in happens on the page itself, so
-                  someone can see what they were invited to before deciding. */}
-              <Route path="/join/:token" element={<JoinGroup />} />
-              {/* Everything tied to one person's calendars needs a login. */}
-              <Route
-                path="/profile"
-                element={
-                  <RequireAuth>
-                    <Profile />
-                  </RequireAuth>
-                }
-              />
-              <Route
-                path="/events"
-                element={
-                  <RequireAuth>
-                    <MyEvents />
-                  </RequireAuth>
-                }
-              />
-              <Route
-                path="/calendar-overview"
-                element={
-                  <RequireAuth>
-                    <CalendarOverview />
-                  </RequireAuth>
-                }
-              />
-            </Routes>
-          </Suspense>
-          <Footer />
-        </BrowserRouter>
-      </AuthProvider>
-    </QueryClientProvider>
+    <LanguageProvider>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <BrowserRouter>
+            {/* Plain background rather than a spinner: these chunks are small, and
+                a flash of "Loading…" would read as slower than a beat of nothing. */}
+            <Suspense fallback={<div className="min-h-screen bg-background" />}>
+              <Routes>
+                <Route path="/" element={<FindDate />} />
+                <Route path="/sign-in" element={<SignIn />} />
+                <Route path="/privacy" element={<Privacy />} />
+                <Route path="/how-it-works" element={<HowItWorks />} />
+                <Route path="/help/connect-icloud" element={<ConnectIcloudHelp />} />
+                <Route path="/help/connect-ics" element={<ConnectIcsHelp />} />
+                <Route path="/help/connect-google" element={<ConnectGoogleHelp />} />
+                <Route path="/help/connect-outlook" element={<ConnectOutlookHelp />} />
+                {/* The invite link. Signing in happens on the page itself, so
+                    someone can see what they were invited to before deciding. */}
+                <Route path="/join/:token" element={<JoinGroup />} />
+                {/* Everything tied to one person's calendars needs a login. */}
+                <Route
+                  path="/profile"
+                  element={
+                    <RequireAuth>
+                      <Profile />
+                    </RequireAuth>
+                  }
+                />
+                <Route
+                  path="/events"
+                  element={
+                    <RequireAuth>
+                      <MyEvents />
+                    </RequireAuth>
+                  }
+                />
+                <Route
+                  path="/calendar-overview"
+                  element={
+                    <RequireAuth>
+                      <CalendarOverview />
+                    </RequireAuth>
+                  }
+                />
+              </Routes>
+            </Suspense>
+            <Footer />
+          </BrowserRouter>
+        </AuthProvider>
+      </QueryClientProvider>
+    </LanguageProvider>
   )
 }
 

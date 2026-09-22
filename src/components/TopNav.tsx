@@ -13,7 +13,9 @@ import { adminStatusQuery } from "@/api/admin";
 import { calendarStatusQuery } from "@/api/calendarStatus";
 import { eventsQuery, needsYourAnswer } from "@/api/events";
 import { groupsQuery } from "@/api/groups";
+import LanguageToggle from "@/components/LanguageToggle";
 import { useAuth } from "@/context/auth";
+import { useT } from "@/i18n/lang";
 import { cn } from "@/lib/utils";
 
 /**
@@ -26,6 +28,7 @@ export default function TopNav() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { user, loading, signOut } = useAuth();
+  const t = useT();
   const onHome = pathname === "/";
   const onProfile = pathname === "/profile";
   const onEvents = pathname === "/events";
@@ -71,18 +74,18 @@ export default function TopNav() {
     void import("@/pages/CalendarOverview");
   };
 
-  // Signed out, the profile tab can only lead to the sign-in page, so on a
-  // phone (where there's no room for a separate Sign in link) it says so.
+  // Signed out, the profile tab can only lead to the sign-in page, so it says
+  // "Sign in" and is the one sign-in link in the bar.
   const signedOut = !loading && !user;
 
   const tabs: Tab[] = [
     // The logo also goes home, but that isn't obvious from Profile or My
     // events, so it gets its own labelled link like the others.
-    { to: "/", label: "Scheduler", short: "Schedule", icon: CalendarSearch, active: onHome },
+    { to: "/", label: t.nav.scheduler, short: t.nav.schedulerShort, icon: CalendarSearch, active: onHome },
     {
       to: "/events",
-      label: "My events",
-      short: "Events",
+      label: t.nav.events,
+      short: t.nav.eventsShort,
       icon: CalendarCheck,
       active: onEvents,
       prefetch: prefetchEvents,
@@ -90,8 +93,8 @@ export default function TopNav() {
     },
     {
       to: "/calendar-overview",
-      label: "My calendar",
-      short: "Calendar",
+      label: t.nav.calendar,
+      short: t.nav.calendarShort,
       icon: CalendarDays,
       active: onCalendarOverview,
       prefetch: prefetchCalendarOverview,
@@ -100,35 +103,45 @@ export default function TopNav() {
       ? {
           // Through /profile, so signing in lands you on your profile.
           to: "/profile",
-          label: "Profile",
-          short: "Sign in",
+          label: t.nav.signIn,
+          short: t.nav.signIn,
           icon: LogIn,
           active: pathname === "/sign-in",
         }
-      : { to: "/profile", label: "Profile", short: "Profile", icon: User, active: onProfile, prefetch: prefetchProfile },
+      : {
+          to: "/profile",
+          label: t.nav.profile,
+          short: t.nav.profileShort,
+          icon: User,
+          active: onProfile,
+          prefetch: prefetchProfile,
+        },
   ];
 
   return (
     // Edge to edge on every page, with the same responsive gutter as the
     // full-width pages' content, so the logo and links sit in the same place
     // wherever you are.
-    <nav className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-5 lg:px-8">
-      <Link to="/" className="flex items-center gap-2">
-        <span className="text-xl font-bold tracking-tight sm:text-2xl">casy</span>
-      </Link>
+    <nav className="flex items-center justify-between gap-2 px-4 py-3 sm:gap-3 sm:px-6 sm:py-5 lg:px-8">
+      <div className="flex items-center gap-2 sm:gap-3">
+        <Link to="/" className="flex items-center">
+          <span className="text-xl font-bold tracking-tight sm:text-2xl">casy</span>
+        </Link>
+        <LanguageToggle />
+      </div>
       {/* On a phone each link is an icon over a one-word label, which is the
           only way four of them fit beside the logo on a 360px screen. */}
-      <div className="flex items-center gap-1 text-muted-foreground sm:gap-6 sm:text-sm">
+      <div className="flex items-center gap-0.5 text-muted-foreground sm:gap-6 sm:text-sm">
         {tabs.map((tab) => (
           <Link
-            key={tab.short}
+            key={tab.to}
             to={tab.to}
             onMouseEnter={tab.prefetch}
             onFocus={tab.prefetch}
             onTouchStart={tab.prefetch}
             aria-current={tab.active ? "page" : undefined}
             className={cn(
-              "flex min-w-14 flex-col items-center gap-0.5 rounded-lg px-1.5 py-1 text-[11px] font-medium transition hover:text-foreground sm:min-w-0 sm:flex-row sm:gap-1.5 sm:p-0 sm:text-sm sm:font-normal",
+              "flex min-w-12 flex-col items-center gap-0.5 rounded-lg px-1 py-1 text-[11px] max-[359px]:min-w-0 max-[359px]:px-0.5 max-[359px]:text-[10px] font-medium transition hover:text-foreground sm:min-w-0 sm:flex-row sm:gap-1.5 sm:p-0 sm:text-sm sm:font-normal",
               tab.active && "text-primary sm:text-foreground",
             )}
           >
@@ -140,11 +153,11 @@ export default function TopNav() {
                 </span>
               )}
             </span>
-            <span className="sm:hidden">{tab.short}</span>
+            <span className="whitespace-nowrap sm:hidden">{tab.short}</span>
             <span className="hidden sm:inline">{tab.label}</span>
             {!!tab.badge && (
               <span
-                aria-label={`${tab.badge} waiting for your answer`}
+                aria-label={t.nav.waitingForAnswer(tab.badge)}
                 className="hidden h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground sm:flex"
               >
                 {tab.badge}
@@ -152,29 +165,16 @@ export default function TopNav() {
             )}
           </Link>
         ))}
-        {/* Nothing until the session is known, so it never flickers from
-            "Sign in" to "Sign out" on load. On a phone, signing out lives on
-            the profile page instead. */}
-        {!loading &&
-          (user ? (
-            <button
-              type="button"
-              onClick={() => void handleSignOut()}
-              className="hidden transition hover:text-foreground sm:block"
-            >
-              Sign out
-            </button>
-          ) : (
-            <Link
-              to="/sign-in"
-              className={cn(
-                "hidden transition hover:text-foreground sm:block",
-                pathname === "/sign-in" && "text-foreground",
-              )}
-            >
-              Sign in
-            </Link>
-          ))}
+        {/* On a phone, signing out lives on the profile page instead. */}
+        {user && (
+          <button
+            type="button"
+            onClick={() => void handleSignOut()}
+            className="hidden transition hover:text-foreground sm:block"
+          >
+            {t.nav.signOut}
+          </button>
+        )}
       </div>
     </nav>
   );

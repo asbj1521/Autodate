@@ -5,6 +5,8 @@ import { CheckCircle2, KeyRound, Loader2, Mail, XCircle } from "lucide-react";
 import PasswordForm from "@/components/PasswordForm";
 import TopNav from "@/components/TopNav";
 import { useAuth } from "@/context/auth";
+import { authErrorMessage } from "@/i18n/authError";
+import { useLang, useT } from "@/i18n/lang";
 import { supabase } from "@/lib/supabase";
 
 /**
@@ -45,6 +47,8 @@ function errorFromUrl(): string | null {
  */
 export default function SignIn() {
   const { user, loading, passwordRecovery, clearPasswordRecovery } = useAuth();
+  const t = useT();
+  const { lang } = useLang();
   const [searchParams] = useSearchParams();
   const next = safeNext(searchParams.get("next"));
 
@@ -80,7 +84,7 @@ export default function SignIn() {
     setRecoveryError(null);
     const { error: err } = await supabase.auth.updateUser({ password: newPassword });
     setRecoverySubmitting(false);
-    if (err) setRecoveryError(err.message);
+    if (err) setRecoveryError(authErrorMessage(err, t));
     else clearPasswordRecovery();
   }
 
@@ -89,18 +93,16 @@ export default function SignIn() {
       <div className="min-h-screen bg-background">
         <TopNav />
         <main className="mx-auto max-w-sm px-4 pb-16 pt-6 sm:px-6 sm:pb-20 sm:pt-10">
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">
-            Choose a new password
+          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+            {t.signIn.newPasswordTitle}
           </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            You can sign in with this the next time, instead of an email link.
-          </p>
+          <p className="mt-2 text-sm text-muted-foreground">{t.signIn.newPasswordIntro}</p>
           <div className="mt-6 rounded-2xl border bg-card p-5 shadow-sm sm:mt-8 sm:p-6">
             <PasswordForm
               submitting={recoverySubmitting}
               error={recoveryError}
-              submitLabel="Save password"
-              submittingLabel="Saving"
+              submitLabel={t.profile.savePassword}
+              submittingLabel={t.profile.saving}
               onSubmit={(pw) => void handleNewPassword(pw)}
             />
           </div>
@@ -115,10 +117,11 @@ export default function SignIn() {
     setError(null);
     const { error: err } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: returnTo },
+      // hl: Google's own sign-in screen in the page's language.
+      options: { redirectTo: returnTo, queryParams: { hl: lang } },
     });
     // On success the browser is already leaving for Google.
-    if (err) setError(err.message);
+    if (err) setError(authErrorMessage(err, t));
   }
 
   async function handleEmail(e: FormEvent<HTMLFormElement>) {
@@ -131,7 +134,7 @@ export default function SignIn() {
       options: { emailRedirectTo: returnTo },
     });
     setSending(false);
-    if (err) setError(err.message);
+    if (err) setError(authErrorMessage(err, t));
     else setSentTo(address);
   }
 
@@ -145,7 +148,7 @@ export default function SignIn() {
     });
     setSending(false);
     // On success the auth state change above redirects via `user`.
-    if (err) setError(err.message);
+    if (err) setError(authErrorMessage(err, t));
   }
 
   async function handleSignUp(newPassword: string) {
@@ -163,13 +166,13 @@ export default function SignIn() {
     // instead, since manual account linking is off — the message says to
     // sign in the way they already do and add a password from their
     // profile, rather than silently creating a second, disconnected account.
-    if (err) setSignupError(err.message);
+    if (err) setSignupError(authErrorMessage(err, t));
   }
 
   async function handleForgotPassword() {
     const address = email.trim();
     if (!address) {
-      setForgotError("Enter your email above first.");
+      setForgotError(t.signIn.enterEmailFirst);
       return;
     }
     setForgotSending(true);
@@ -178,7 +181,7 @@ export default function SignIn() {
       redirectTo: returnTo,
     });
     setForgotSending(false);
-    if (err) setForgotError(err.message);
+    if (err) setForgotError(authErrorMessage(err, t));
     else setForgotSentTo(address);
   }
 
@@ -205,10 +208,10 @@ export default function SignIn() {
       <TopNav />
 
       <main className="mx-auto max-w-sm px-4 pb-16 pt-6 sm:px-6 sm:pb-20 sm:pt-10">
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Sign in</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Sign in to connect your calendars and plan with your groups.
-        </p>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+          {t.signIn.title}
+        </h1>
+        <p className="mt-2 text-sm text-muted-foreground">{t.signIn.intro}</p>
 
         <div className="mt-6 rounded-2xl border bg-card p-5 shadow-sm sm:mt-8 sm:p-6">
           <button
@@ -219,12 +222,12 @@ export default function SignIn() {
             <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">
               G
             </span>
-            Continue with Google
+            {t.signIn.google}
           </button>
 
           <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
             <span className="h-px flex-1 bg-border" />
-            or
+            {t.signIn.or}
             <span className="h-px flex-1 bg-border" />
           </div>
 
@@ -233,28 +236,29 @@ export default function SignIn() {
               <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>
-                  Check your inbox. We sent a sign-in link to <strong>{sentTo}</strong>. Open it in
-                  this browser to finish signing in.{" "}
-                  <button
-                    type="button"
-                    onClick={() => setSentTo(null)}
-                    className="font-medium underline underline-offset-2"
-                  >
-                    Use another email
-                  </button>
+                  {t.signIn.linkSent(
+                    <strong>{sentTo}</strong>,
+                    <button
+                      type="button"
+                      onClick={() => setSentTo(null)}
+                      className="font-medium underline underline-offset-2"
+                    >
+                      {t.signIn.otherEmail}
+                    </button>,
+                  )}
                 </span>
               </div>
             ) : (
               <form onSubmit={(e) => void handleEmail(e)} className="flex flex-col gap-3">
                 <label className="text-sm">
-                  <span className="mb-1 block font-medium text-foreground">Email</span>
+                  <span className="mb-1 block font-medium text-foreground">{t.signIn.email}</span>
                   <input
                     type="email"
                     required
                     autoComplete="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@example.com"
+                    placeholder={t.signIn.emailPlaceholder}
                     className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
                   />
                 </label>
@@ -268,7 +272,7 @@ export default function SignIn() {
                   ) : (
                     <Mail className="h-4 w-4" />
                   )}
-                  {sending ? "Sending link" : "Email me a sign-in link"}
+                  {sending ? t.signIn.sendingLink : t.signIn.sendLink}
                 </button>
               </form>
             )
@@ -290,7 +294,7 @@ export default function SignIn() {
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  Sign in
+                  {t.signIn.tabSignIn}
                 </button>
                 <button
                   type="button"
@@ -301,7 +305,7 @@ export default function SignIn() {
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  Create account
+                  {t.signIn.tabSignUp}
                 </button>
               </div>
 
@@ -310,33 +314,34 @@ export default function SignIn() {
                   <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
                     <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
                     <span>
-                      Check your inbox. We sent a password reset link to{" "}
-                      <strong>{forgotSentTo}</strong>.{" "}
-                      <button
-                        type="button"
-                        onClick={() => setForgotSentTo(null)}
-                        className="font-medium underline underline-offset-2"
-                      >
-                        Try again
-                      </button>
+                      {t.signIn.resetSent(
+                        <strong>{forgotSentTo}</strong>,
+                        <button
+                          type="button"
+                          onClick={() => setForgotSentTo(null)}
+                          className="font-medium underline underline-offset-2"
+                        >
+                          {t.signIn.tryAgain}
+                        </button>,
+                      )}
                     </span>
                   </div>
                 ) : (
                   <form onSubmit={(e) => void handlePassword(e)} className="flex flex-col gap-3">
                     <label className="text-sm">
-                      <span className="mb-1 block font-medium text-foreground">Email</span>
+                      <span className="mb-1 block font-medium text-foreground">{t.signIn.email}</span>
                       <input
                         type="email"
                         required
                         autoComplete="email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        placeholder="you@example.com"
+                        placeholder={t.signIn.emailPlaceholder}
                         className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
                       />
                     </label>
                     <label className="text-sm">
-                      <span className="mb-1 block font-medium text-foreground">Password</span>
+                      <span className="mb-1 block font-medium text-foreground">{t.signIn.password}</span>
                       <input
                         type="password"
                         required
@@ -356,7 +361,7 @@ export default function SignIn() {
                       ) : (
                         <KeyRound className="h-4 w-4" />
                       )}
-                      {sending ? "Signing in" : "Sign in"}
+                      {sending ? t.signIn.signingIn : t.signIn.signInButton}
                     </button>
                     <button
                       type="button"
@@ -364,7 +369,7 @@ export default function SignIn() {
                       disabled={forgotSending}
                       className="self-start text-xs text-muted-foreground underline underline-offset-2 transition hover:text-foreground disabled:opacity-60"
                     >
-                      {forgotSending ? "Sending reset link" : "Forgot password?"}
+                      {forgotSending ? t.signIn.sendingReset : t.signIn.forgot}
                     </button>
                     {forgotError && (
                       <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
@@ -377,23 +382,23 @@ export default function SignIn() {
               ) : (
                 <div className="flex flex-col gap-3">
                   <label className="text-sm">
-                    <span className="mb-1 block font-medium text-foreground">Email</span>
+                    <span className="mb-1 block font-medium text-foreground">{t.signIn.email}</span>
                     <input
                       type="email"
                       required
                       autoComplete="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="you@example.com"
+                      placeholder={t.signIn.emailPlaceholder}
                       className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
                     />
                   </label>
                   <PasswordForm
                     submitting={signupSubmitting}
                     error={signupError}
-                    submitLabel="Create account"
-                    submittingLabel="Creating account"
-                    passwordLabel="Password"
+                    submitLabel={t.signIn.createAccount}
+                    submittingLabel={t.signIn.creatingAccount}
+                    passwordLabel={t.signIn.password}
                     onSubmit={(pw) => void handleSignUp(pw)}
                   />
                 </div>
@@ -406,7 +411,7 @@ export default function SignIn() {
             onClick={() => switchMode(mode === "link" ? "password" : "link")}
             className="mt-4 text-xs text-muted-foreground underline underline-offset-2 transition hover:text-foreground"
           >
-            {mode === "link" ? "Use a password instead" : "Use an email link instead"}
+            {mode === "link" ? t.signIn.usePassword : t.signIn.useLink}
           </button>
 
           {error && (

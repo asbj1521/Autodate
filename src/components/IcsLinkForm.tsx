@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, Lock, XCircle } from "lucide-react";
 
 import InfoTip from "@/components/InfoTip";
+import { useT } from "@/i18n/lang";
 
 /**
  * The "add a calendar by link" form: a feed URL and an optional name.
@@ -25,6 +26,7 @@ export default function IcsLinkForm({
   onSubmit: (url: string, name: string) => void;
   onCancel: () => void;
 }) {
+  const t = useT();
   const [url, setUrl] = useState("");
   const [name, setName] = useState("");
   const urlId = useId();
@@ -50,12 +52,8 @@ export default function IcsLinkForm({
                   <label> would take over the label from its input. */}
               <div className="mb-1 flex items-center gap-1.5 font-medium text-foreground">
                 <Lock className="h-3.5 w-3.5" />
-                <label htmlFor={urlId}>Calendar link</label>
-                <InfoTip label="About calendar links">
-                  Anyone who has this link can read the calendar. It is stored privately and never
-                  shown again. Only start and end times are kept; titles, places and attendees are
-                  removed before anything is stored.
-                </InfoTip>
+                <label htmlFor={urlId}>{t.icsForm.link}</label>
+                <InfoTip label={t.icsForm.about}>{t.icsForm.aboutBody}</InfoTip>
               </div>
               <input
                 id={urlId}
@@ -69,19 +67,19 @@ export default function IcsLinkForm({
                 className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
               />
               <span className="mt-1 block text-xs text-muted-foreground">
-                Treat this link like a password.
+                {t.icsForm.likePassword}
               </span>
             </div>
             <label className="text-sm">
               <span className="mb-1 block font-medium text-foreground">
-                Name (optional)
+                {t.icsForm.name}
               </span>
               <input
                 type="text"
                 maxLength={80}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. CBS timetable"
+                placeholder={t.icsForm.namePlaceholder}
                 className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
               />
             </label>
@@ -98,7 +96,7 @@ export default function IcsLinkForm({
                 className="flex items-center gap-2 rounded-full bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition hover:opacity-90 disabled:opacity-60"
               >
                 {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                {submitting ? "Reading calendar" : "Add link"}
+                {submitting ? t.icsForm.reading : t.providerCard.addLink}
               </button>
               <button
                 type="button"
@@ -106,7 +104,7 @@ export default function IcsLinkForm({
                 onClick={onCancel}
                 className="text-sm text-muted-foreground transition hover:text-foreground"
               >
-                Cancel
+                {t.common.cancel}
               </button>
             </div>
           </div>

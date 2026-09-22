@@ -36,10 +36,12 @@ import { EXAMPLE_GROUPS, exampleGroup, SEARCH_WINDOW } from "@/api/mockData";
 import { CURRENT_USER_ID } from "@/api/currentUser";
 import { useExampleCarousel, type Carousel } from "@/hooks/useExampleCarousel";
 import { displayName, useAuth } from "@/context/auth";
+import { useT } from "@/i18n/lang";
 import type { OverviewData } from "@/lib/calendarOverview";
 import { busyFromCalendars, withRealCalendar } from "@/lib/realCalendar";
 import { callFunction } from "@/lib/supabaseFunctions";
 import type { FriendGroup } from "@/types";
+import { currentMessages } from "@/i18n/current";
 
 /** What the page shows in the switcher: a group, plus how real it is. */
 export interface SchedulingGroup extends FriendGroup {
@@ -79,6 +81,7 @@ export interface SchedulingGroups {
 
 export function useSchedulingGroups(selectedGroupId: string | null): SchedulingGroups {
   const { user } = useAuth();
+  const t = useT();
 
   const realQuery = useQuery({ ...groupsQuery(user?.id ?? ""), enabled: !!user });
   // A stable empty array while nothing has loaded, so the memos below aren't
@@ -98,7 +101,7 @@ export function useSchedulingGroups(selectedGroupId: string | null): SchedulingG
     queryFn: () =>
       callFunction<OverviewData>("calendar-busy", {
         params: { from: SEARCH_WINDOW.start, to: SEARCH_WINDOW.end },
-        errorMessage: "Couldn't load your calendars",
+        errorMessage: currentMessages().api.loadCalendars,
       }),
     enabled: !!user && !hasRealGroups,
     staleTime: 60_000,
@@ -126,13 +129,17 @@ export function useSchedulingGroups(selectedGroupId: string | null): SchedulingG
     enabled: !!user && !!busyEnabledId,
   });
 
+  const markYou = t.common.withYou;
+  const exampleNames = t.examples.groups;
+  const exampleYou = t.examples.you;
+
   const groups = useMemo<SchedulingGroup[]>(() => {
     if (hasRealGroups) {
       return realGroups.map((g) => {
         // Only the active group's calendars are fetched, so the others are
         // listed with no participants until they are selected in turn.
         const data = g.id === activeGroupId ? busyQuery.data : undefined;
-        const { participants, waitingFor } = participantsFromGroup(g, data);
+        const { participants, waitingFor } = participantsFromGroup(g, data, markYou);
         return {
           id: g.id,
           name: g.name,
@@ -151,26 +158,29 @@ export function useSchedulingGroups(selectedGroupId: string | null): SchedulingG
       // Your real calendar replaces the "you" slot only once there is one:
       // with nothing connected you would read as free all year, which is less
       // honest than leaving the generated calendar in place.
-      const withYou =
-        base && myCalendars && myCalendars.calendars.length > 0
-          ? withRealCalendar(
-              [base],
-              CURRENT_USER_ID,
-              `${displayName(user)} (you)`,
-              busyFromCalendars(myCalendars),
-            )[0]
-          : base;
+      const swapped = !!base && !!myCalendars && myCalendars.calendars.length > 0;
+      const participants = swapped
+        ? withRealCalendar(
+            [base],
+            CURRENT_USER_ID,
+            markYou(displayName(user)),
+            busyFromCalendars(myCalendars),
+          )[0].participants
+        : // Still the generated "you", named in the page's language.
+          (base?.participants ?? []).map((p) =>
+            p.profileId === CURRENT_USER_ID ? { ...p, name: exampleYou } : p,
+          );
 
       return {
         id: def.id,
-        name: def.name,
-        participants: withYou?.participants ?? [],
+        name: exampleNames[def.id as keyof typeof exampleNames] ?? def.name,
+        participants,
         isExample: true,
         waitingFor: [],
         memberCount: def.members.length,
       };
     });
-  }, [hasRealGroups, realGroups, showingExamples, activeGroupId, busyQuery.data, myCalendars, user]);
+  }, [hasRealGroups, realGroups, showingExamples, activeGroupId, busyQuery.data, myCalendars, user, markYou, exampleNames, exampleYou]);
 
   return {
     groups,

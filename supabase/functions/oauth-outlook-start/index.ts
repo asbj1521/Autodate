@@ -18,6 +18,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
 import { signState } from "../_shared/state.ts";
 import { AUTHORIZE_URL, SCOPES } from "../_shared/outlook.ts";
+import { langOf, withLanguage } from "../_shared/i18n.ts";
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -26,7 +27,7 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withLanguage(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -67,6 +68,7 @@ Deno.serve(async (req) => {
   authUrl.searchParams.set("scope", SCOPES); // includes offline_access, which is what yields a refresh token
   authUrl.searchParams.set("prompt", "select_account"); // lets someone with several Microsoft accounts pick, incl. on reconnect
   authUrl.searchParams.set("state", state);
+  authUrl.searchParams.set("ui_locales", langOf(req)); // Microsoft's sign-in in the site's language
 
   return json({ url: authUrl.toString() });
-});
+}));

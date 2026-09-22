@@ -35,6 +35,7 @@ import {
 } from "../_shared/groups.ts";
 import { encryptionKeyFromEnv, lookupHash } from "../_shared/secretBox.ts";
 import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
+import { withLanguage } from "../_shared/i18n.ts";
 
 type Db = ReturnType<typeof supabaseAdmin>;
 
@@ -270,7 +271,7 @@ async function groupBusy(db: Db, memberIds: string[], from: Date, to: Date) {
   };
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withLanguage(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -544,4 +545,4 @@ Deno.serve(async (req) => {
     console.error(`groups ${action} failed`, err);
     return json({ error: "Something went wrong. Please try again." }, 500);
   }
-});
+}));

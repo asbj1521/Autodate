@@ -14,6 +14,7 @@ import { dayOf } from "@/lib/day";
 import { findEventSlot, isEventSettings, type EventSettings } from "@/lib/eventSearch";
 import { callFunction } from "@/lib/supabaseFunctions";
 import { addDays, APP_TIME_ZONE } from "@/lib/zone";
+import { currentMessages } from "@/i18n/current";
 
 export type EventStatus = "pending" | "scheduled" | "no_date" | "cancelled";
 export type EventResponse = "accepted" | "declined";
@@ -57,7 +58,7 @@ export function eventsQuery(userId: string) {
     queryFn: async (): Promise<SuggestedEvent[]> => {
       const body = await callFunction<{ events?: SuggestedEvent[] }>("events", {
         body: { action: "list" },
-        errorMessage: "Couldn't load your events",
+        errorMessage: currentMessages().api.loadEvents,
       });
       return body.events ?? [];
     },
@@ -81,19 +82,19 @@ export async function suggestEvent(input: {
 }): Promise<{ events: SuggestedEvent[] }> {
   return await callFunction("events", {
     body: { action: "suggest", ...input },
-    errorMessage: "Couldn't suggest the event",
+    errorMessage: currentMessages().api.suggestEvent,
   });
 }
 
 export async function cancelEvent(proposalId: string): Promise<{ events: SuggestedEvent[] }> {
   return await callFunction("events", {
     body: { action: "cancel", proposalId },
-    errorMessage: "Couldn't cancel the event",
+    errorMessage: currentMessages().api.cancelEvent,
   });
 }
 
 export async function acceptEvent(event: SuggestedEvent): Promise<{ events: SuggestedEvent[] }> {
-  if (!event.currentDate) throw new Error("This event has no date to accept.");
+  if (!event.currentDate) throw new Error(currentMessages().api.noDateToAccept);
   return await callFunction("events", {
     body: {
       action: "respond",
@@ -101,7 +102,7 @@ export async function acceptEvent(event: SuggestedEvent): Promise<{ events: Sugg
       dateId: event.currentDate.id,
       response: "accepted",
     },
-    errorMessage: "Couldn't accept the event",
+    errorMessage: currentMessages().api.acceptEvent,
   });
 }
 
@@ -118,8 +119,8 @@ export async function declineEvent(
   userId: string,
   event: SuggestedEvent,
 ): Promise<{ events: SuggestedEvent[]; outcome: string }> {
-  if (!event.currentDate) throw new Error("This event has no date to decline.");
-  if (!isEventSettings(event.settings)) throw new Error("This event can't be rescheduled.");
+  if (!event.currentDate) throw new Error(currentMessages().api.noDateToDecline);
+  if (!isEventSettings(event.settings)) throw new Error(currentMessages().api.cantReschedule);
 
   const [groups, busy] = await Promise.all([
     queryClient.fetchQuery(groupsQuery(userId)),
@@ -128,7 +129,7 @@ export async function declineEvent(
     ),
   ]);
   const group = groups.find((g) => g.id === event.group.id);
-  if (!group) throw new Error("You're no longer in this group.");
+  if (!group) throw new Error(currentMessages().api.notInGroup);
   const { participants } = participantsFromGroup(group, busy);
 
   // Where the next search starts. A vacation starts after the declined one
@@ -156,6 +157,6 @@ export async function declineEvent(
       response: "declined",
       next: slot ? { start: slot.start, end: slot.end } : null,
     },
-    errorMessage: "Couldn't decline the event",
+    errorMessage: currentMessages().api.declineEvent,
   });
 }

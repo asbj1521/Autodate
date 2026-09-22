@@ -15,6 +15,7 @@
 import { callerId } from "../_shared/auth.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
+import { withLanguage } from "../_shared/i18n.ts";
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -23,7 +24,7 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withLanguage(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -62,4 +63,4 @@ Deno.serve(async (req) => {
     return json({ error: "Connection not found" }, 404);
   }
   return json({ removed: data[0].id });
-});
+}));

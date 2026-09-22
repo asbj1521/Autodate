@@ -2,6 +2,7 @@ import { Star } from "lucide-react";
 
 import type { MonthGrid } from "@/lib/heatmap";
 import { ACCENT_RGB, AMBER_RGB } from "@/lib/colors";
+import { LOCALE, useLang, useT } from "@/i18n/lang";
 import { cn } from "@/lib/utils";
 import { addDays } from "@/lib/zone";
 
@@ -30,6 +31,8 @@ export default function CalendarPanel({
   /** The zone the grid's days are local to. */
   timeZone: string;
 }) {
+  const t = useT();
+  const { lang } = useLang();
   const bestMs = bestDay ? Date.parse(bestDay) : null;
   // Where the highlighted run ends: counted in local days, not 24 h steps.
   const bestEndMs = bestMs === null ? null : addDays(bestMs, bestSpanDays, timeZone);
@@ -71,10 +74,11 @@ export default function CalendarPanel({
           // The 1st of a month is labelled with its abbreviation, e.g. "1. jul.".
           const numberLabel =
             cell.dayOfMonth === 1
-              ? `1. ${new Date(cell.date).toLocaleString("da-DK", {
+              ? new Date(cell.date).toLocaleDateString(LOCALE[lang], {
+                  day: "numeric",
                   month: "short",
                   timeZone,
-                })}`
+                })
               : cell.dayOfMonth;
 
           return (
@@ -82,11 +86,7 @@ export default function CalendarPanel({
               key={cell.date}
               title={
                 inMonth && !isPast && !cell.excluded
-                  ? `${cell.freeCount}/${cell.total} can meet${
-                      cell.conditionalCount > 0
-                        ? `, ${cell.conditionalCount} would need time off`
-                        : ""
-                    }`
+                  ? t.scheduler.cellTitle(cell.freeCount, cell.total, cell.conditionalCount)
                   : undefined
               }
               className="relative min-h-[58px] border-b border-r p-1 sm:min-h-[80px] sm:p-1.5"
@@ -136,7 +136,7 @@ export default function CalendarPanel({
                       >
                         <Star className="h-2.5 w-2.5 shrink-0 fill-current" />
                         <span className="truncate">
-                          Best
+                          {t.scheduler.best}
                           {bestTimeLabel && (
                             <span className="hidden sm:inline"> · {bestTimeLabel}</span>
                           )}
@@ -164,8 +164,8 @@ export default function CalendarPanel({
                       <span className="truncate text-[10px] tabular-nums text-muted-foreground">
                         {cell.freeCount}/{cell.total}
                         <span className="hidden sm:inline">
-                          {" free"}
-                          {cell.conditionalCount > 0 && ` · ${cell.conditionalCount} work`}
+                          {t.scheduler.cellFree}
+                          {cell.conditionalCount > 0 && t.scheduler.cellWork(cell.conditionalCount)}
                         </span>
                       </span>
                     </div>

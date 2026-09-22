@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, Loader2 } from "lucide-react";
 
+import { useT } from "@/i18n/lang";
 import {
-  CATEGORY_OPTIONS,
+  CATEGORIES,
   groupCalendarsByBrand,
   groupVisibility,
-  HOLIDAY_CATEGORY_LABEL,
+  HOLIDAY_CALENDAR_ID,
   type OverviewCalendar,
 } from "@/lib/calendarOverview";
 import { cn } from "@/lib/utils";
@@ -71,7 +72,11 @@ export default function CalendarListPanel({
   onSetVisible: (calendarIds: string[], visible: boolean) => void;
   onSetPurpose: (calendarId: string, purpose: CalendarPurpose | null) => void;
 }) {
+  const t = useT();
+  const words = t.calendarView;
   const groups = useMemo(() => groupCalendarsByBrand(calendars), [calendars]);
+  // The built-in holiday calendar is named in the page's language.
+  const nameOf = (c: OverviewCalendar) => (c.id === HOLIDAY_CALENDAR_ID ? words.holidayCalendar : c.name);
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
 
   const toggleOpen = (id: string) =>
@@ -84,11 +89,8 @@ export default function CalendarListPanel({
 
   return (
     <aside className="rounded-2xl border bg-card p-4 shadow-sm sm:p-5">
-      <h2 className="font-semibold text-foreground">Your calendars</h2>
-      <p className="mt-1 text-xs text-muted-foreground">
-        Tick a calendar to show it on the grid. Open a group to give each calendar a category;
-        every busy block takes its calendar's category and colour.
-      </p>
+      <h2 className="font-semibold text-foreground">{words.listTitle}</h2>
+      <p className="mt-1 text-xs text-muted-foreground">{words.listIntro}</p>
 
       <ul className="mt-3 divide-y">
         {groups.map((group) => {
@@ -97,13 +99,14 @@ export default function CalendarListPanel({
           const ids = group.calendars.map((c) => c.id);
           const inView = ids.reduce((sum, id) => sum + (blockCounts.get(id) ?? 0), 0);
           const n = group.calendars.length;
+          const brand = words.brands[group.id] ?? group.label;
 
           return (
             <li key={group.id}>
               <div className="flex items-center gap-3 py-3">
                 <GroupCheckbox
                   state={state}
-                  label={`Show all ${group.label} calendars`}
+                  label={words.showAll(brand)}
                   // All visible -> hide them all; otherwise show them all.
                   onChange={() => onSetVisible(ids, state !== "all")}
                 />
@@ -115,10 +118,10 @@ export default function CalendarListPanel({
                 >
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium text-foreground">
-                      {group.label}
+                      {brand}
                     </span>
                     <span className="block truncate text-xs text-muted-foreground">
-                      {n} {n === 1 ? "calendar" : "calendars"} · {inView} in this view
+                      {t.counts.calendars(n)} · {words.inView(inView)}
                     </span>
                   </span>
                   <span className="flex shrink-0 items-center gap-0.5">
@@ -158,7 +161,7 @@ export default function CalendarListPanel({
                               type="checkbox"
                               checked={!isHidden}
                               onChange={() => onSetVisible([c.id], isHidden)}
-                              aria-label={`Show ${c.name}`}
+                              aria-label={words.show(nameOf(c))}
                               className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-primary"
                             />
                             <span
@@ -172,10 +175,10 @@ export default function CalendarListPanel({
                                   isHidden && "text-muted-foreground line-through",
                                 )}
                               >
-                                {c.name}
+                                {nameOf(c)}
                               </p>
                               <p className="truncate text-xs text-muted-foreground">
-                                {isBuiltIn ? "Built in, no account needed" : (c.account ?? "")}
+                                {isBuiltIn ? words.builtInNoAccount : (c.account ?? "")}
                               </p>
                             </div>
                           </div>
@@ -189,7 +192,7 @@ export default function CalendarListPanel({
                                   color: `rgb(${colorOf(c.id)})`,
                                 }}
                               >
-                                {HOLIDAY_CATEGORY_LABEL}
+                                {words.holidayCategory}
                               </span>
                             ) : (
                               <select
@@ -198,20 +201,20 @@ export default function CalendarListPanel({
                                 onChange={(e) =>
                                   onSetPurpose(c.id, (e.target.value || null) as CalendarPurpose | null)
                                 }
-                                aria-label={`Category for ${c.name}`}
+                                aria-label={words.categoryFor(nameOf(c))}
                                 className="rounded-lg border bg-background px-2 py-1 text-xs text-foreground outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-60"
                               >
-                                <option value="">No category</option>
-                                {CATEGORY_OPTIONS.map((o) => (
-                                  <option key={o.value} value={o.value}>
-                                    {o.label}
+                                <option value="">{words.noCategory}</option>
+                                {CATEGORIES.map((category) => (
+                                  <option key={category} value={category}>
+                                    {t.categories[category]}
                                   </option>
                                 ))}
                               </select>
                             )}
                             {saving && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
                             <span className="text-xs text-muted-foreground">
-                              {blockCounts.get(c.id) ?? 0} in this view
+                              {words.inView(blockCounts.get(c.id) ?? 0)}
                             </span>
                           </div>
                         </li>

@@ -12,6 +12,7 @@
  * There is no event title anywhere in this data, by design.
  */
 import { danishHolidays, type Holiday } from "@/lib/danishHolidays";
+import { mondayFirstWeekdays } from "@/lib/dateLabels";
 import type { CalendarProvider, CalendarPurpose } from "@/types";
 
 /** One connected calendar, as returned by the calendar-busy function. */
@@ -58,7 +59,7 @@ export interface MonthDay {
 export interface MonthLayout {
   /** e.g. "september 2026". */
   label: string;
-  /** Column headers, Monday-first, in the same Danish style as the front page. */
+  /** Column headers, Monday-first, in the page's language. */
   weekdayLabels: string[];
   weeks: MonthDay[][];
   /** ISO 8601 week number for each row of `weeks` (Danish "uge"). */
@@ -68,8 +69,6 @@ export interface MonthLayout {
   /** Start of the day after the last grid cell (local midnight, exclusive). */
   to: Date;
 }
-
-const WEEKDAY_LABELS = ["man.", "tirs.", "ons.", "tors.", "fre.", "lør.", "søn."];
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -105,7 +104,7 @@ export function isoWeekNumber(date: Date): number {
  *
  * @param monthIndex 0-based (0 = January)
  */
-export function buildMonthLayout(year: number, monthIndex: number): MonthLayout {
+export function buildMonthLayout(year: number, monthIndex: number, locale = "da-DK"): MonthLayout {
   const first = new Date(year, monthIndex, 1);
   const offset = (first.getDay() + 6) % 7; // days since Monday
   const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
@@ -128,8 +127,8 @@ export function buildMonthLayout(year: number, monthIndex: number): MonthLayout 
   }
 
   return {
-    label: first.toLocaleString("da-DK", { month: "long", year: "numeric" }),
-    weekdayLabels: WEEKDAY_LABELS,
+    label: first.toLocaleString(locale, { month: "long", year: "numeric" }),
+    weekdayLabels: mondayFirstWeekdays(locale),
     weeks,
     weekNumbers: weeks.map((week) => isoWeekNumber(week[0].date)),
     from: weeks[0][0].date,
@@ -210,9 +209,6 @@ export function segmentByDay(
 
 export const HOLIDAY_CALENDAR_ID = "builtin:dk-holidays";
 
-/** Holidays are always categorised as this; there is nothing to pick. */
-export const HOLIDAY_CATEGORY_LABEL = "Holiday";
-
 /** The always-present holiday calendar: computed, not connected, no account. */
 export const HOLIDAY_CALENDAR: OverviewCalendar = {
   id: HOLIDAY_CALENDAR_ID,
@@ -276,39 +272,28 @@ export function formatLocalTime(d: Date): string {
 }
 
 /** "09:15-11:20", "All day", or "22:00-24:00" for a segment ending at midnight. */
-export function formatSegmentRange(seg: DaySegment): string {
-  if (seg.allDay) return "All day";
+export function formatSegmentRange(seg: DaySegment, allDay = "All day"): string {
+  if (seg.allDay) return allDay;
   const endsAtMidnight =
     seg.end.getHours() === 0 && seg.end.getMinutes() === 0 && seg.end > seg.start;
   return `${formatLocalTime(seg.start)}-${endsAtMidnight ? "24:00" : formatLocalTime(seg.end)}`;
 }
 
-/** "2 h 35 min", "45 min", "3 h". */
-export function formatDuration(start: Date, end: Date): string {
+/** "2 h 35 min", "45 min", "3 h"; `hourUnit` is "t" in Danish. */
+export function formatDuration(start: Date, end: Date, hourUnit = "h"): string {
   const minutes = Math.round((end.getTime() - start.getTime()) / 60_000);
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   if (h === 0) return `${m} min`;
-  return m === 0 ? `${h} h` : `${h} h ${m} min`;
+  return m === 0 ? `${h} ${hourUnit}` : `${h} ${hourUnit} ${m} min`;
 }
 
 // ---------------------------------------------------------------------------
 // Categories and colours
 // ---------------------------------------------------------------------------
 
-export const CATEGORY_OPTIONS: { value: CalendarPurpose; label: string }[] = [
-  { value: "work", label: "Work" },
-  { value: "school", label: "School" },
-  { value: "personal", label: "Personal" },
-  { value: "other", label: "Other" },
-];
-
-export const CATEGORY_LABELS: Record<CalendarPurpose, string> = {
-  work: "Work",
-  school: "School",
-  personal: "Personal",
-  other: "Other",
-};
+/** The categories a calendar can have, in the order the picker lists them. */
+export const CATEGORIES: CalendarPurpose[] = ["work", "school", "personal", "other"];
 
 /** "r, g, b" strings, for use in rgba(...) like the front page's accent colours. */
 const CATEGORY_RGB: Record<CalendarPurpose, string> = {

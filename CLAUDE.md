@@ -12,7 +12,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Commit only when the user explicitly says so ("commit"); never commit or push on your own
 - Provide critical, honest analysis; prioritize solution quality over convenience
 - Ask clarifying questions when intent is ambiguous rather than assuming
-- Website copy: no emojis, and no em or en dashes
+- Website copy: no emojis, and no em or en dashes, in both Danish and English
+- The site is Danish by default with an English switch: every new piece of text needs both languages (see Languages below)
 
 ## Project Overview
 
@@ -27,7 +28,7 @@ Casy Users sign in, link their calendars (Google, Outlook, Apple iCloud, or any 
 - **Frontend:** React 19 + TypeScript + Vite, React Router v7
 - **UI:** Tailwind CSS with hand-built components (`src/components/`); only `@radix-ui/react-tooltip` from Radix; icons from lucide-react, except the real Google/Microsoft/Apple brand marks on the profile page's provider cards, which come from `react-icons` (`si`/`fa6`)
 - **Animations:** Framer Motion
-- **State:** component state plus TanStack Query for server data, with a few of the user's own answers remembered across reloads (`src/lib/queryPersistence.ts`); one React context, for auth (`src/context/`)
+- **State:** component state plus TanStack Query for server data, with a few of the user's own answers remembered across reloads (`src/lib/queryPersistence.ts`); two React contexts: auth (`src/context/`) and language (`src/i18n/`)
 - **Hosting:** Vercel (project `casy`), auto-deploys `main`; `vercel.json` rewrites every path to `index.html` for the SPA
 - **Backend:** Supabase: Postgres, Auth (Google sign-in + email magic link), Edge Functions (Deno), Vault, pg_cron + pg_net
 - **Testing:** Vitest (frontend, `src/**/*.test.ts`) and Deno test (Edge Functions, `supabase/functions/_shared/*_test.ts`)
@@ -60,6 +61,7 @@ src/
 ├── components/   # Hand-built UI components; RequireAuth guards signed-in routes; AdminPanel is lazy-loaded
 ├── context/      # Auth: AuthProvider (session) + auth.ts (useAuth, displayName)
 ├── hooks/        # useSchedulingGroups (real vs example groups), useExampleCarousel
+├── i18n/         # Languages: da.tsx (the shape) + en.tsx, useT/useLang, current.ts for code outside React
 ├── lib/          # Pure logic + clients (see below); tests sit next to the code
 ├── pages/        # FindDate (/), MyEvents (/events), SignIn, Profile, CalendarOverview, JoinGroup (/join/:token), Privacy, HowItWorks
 └── types/        # Core data model (BusyInterval, Participant, Event, ...)
@@ -77,8 +79,15 @@ supabase/
 - `src/hooks/useSchedulingGroups.ts`: which groups the scheduling page searches. Real groups carry every member's busy time; a member with no calendar is left out of the search and named in `waitingFor` rather than counted as free. With no real groups, the labelled examples cycle instead. Only the group on screen is fetched.
 - `src/lib/queryPersistence.ts`: remembers only the `groups`, `calendar-status`, `admin-status` and `whoami` queries in localStorage (keys include the user id, wiped on sign-out, dropped after 7 days), so reloads show them at once and refresh in the background. Only ever add queries about the signed-in user themself: never other people's busy times or the admin overview.
 - `src/lib/adminOverview.ts`: patches the admin overview after an action so the row disappears at once, while the real overview refetches in the background.
-- `src/lib/supabaseFunctions.ts`: `callFunction()`, the only way the frontend calls Edge Functions. It attaches the session's access token.
+- `src/lib/supabaseFunctions.ts`: `callFunction()`, the only way the frontend calls Edge Functions. It attaches the session's access token and `?lang=` (a query parameter, not a header, so no CORS change is needed).
 - `src/lib/supabase.ts`: the Supabase client, used for auth only (tables are not read from the browser).
+
+### Languages
+- Danish is the default; the DA | EN switch in the header (`LanguageToggle`) is remembered in localStorage (`casy-lang`), and `?lang=en` forces English for that visit (Google's privacy link uses it).
+- Shared UI text lives in `src/i18n/da.tsx`, which defines the shape; `en.tsx` is typed against it, so a missing key fails the build. Components read it with `const t = useT()`. Sentences with a link inside take the link as an argument. Long single-page text (Privacy, How it works, the four help guides) keeps its own `da`/`en` objects in the page file, typed the same way.
+- Plain helpers in `src/lib` take a `Lang` (from `src/i18n/locale.ts`, which has no React) or the words they need; dates use `LOCALE[lang]` (da-DK / en-GB), times always read "16:00".
+- A suggested event stores its type's English name as its title (`storedEventTitle`) and is shown translated (`eventTitle`), so mixed-language groups each read their own language.
+- Edge Functions keep writing errors in English; `withLanguage()` (`_shared/i18n.ts`) wraps each handler and translates a failed response's `error` when the call asked for `lang=da`. `i18n_test.ts` fails if a translated English message no longer appears in the code. Supabase Auth errors are translated on the page by code (`src/i18n/authError.ts`). The auth emails (Supabase templates) are still English only.
 
 ### Auth and data access
 - Every table has RLS enabled with **no** policies: the browser can't read or write any table. All data goes through Edge Functions using the service role.

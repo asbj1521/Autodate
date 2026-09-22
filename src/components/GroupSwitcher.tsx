@@ -2,6 +2,7 @@ import { Check, ChevronDown, Plus, Users } from "lucide-react";
 
 import Popover from "@/components/Popover";
 import RollingText from "@/components/RollingText";
+import { useT } from "@/i18n/lang";
 import { cn } from "@/lib/utils";
 import type { SchedulingGroup } from "@/hooks/useSchedulingGroups";
 
@@ -27,6 +28,7 @@ export default function GroupSwitcher({
   onCreate: () => void;
   variant: "hero" | "title";
 }) {
+  const t = useT();
   const selected = groups.find((g) => g.id === selectedId);
   const hero = variant === "hero";
 
@@ -44,10 +46,10 @@ export default function GroupSwitcher({
         <>
           <span className="flex min-w-0 items-center gap-2">
             {hero && <Users className="h-4 w-4 shrink-0 text-primary" />}
-            <RollingText text={selected?.name ?? "Select group"} className="min-w-0" />
+            <RollingText text={selected?.name ?? t.groupSwitcher.select} className="min-w-0" />
             {selected?.isExample && (
               <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-                Example
+                {t.common.example}
               </span>
             )}
           </span>
@@ -64,7 +66,7 @@ export default function GroupSwitcher({
       {(close) => (
         <>
           <p className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Your friend groups
+            {t.groupSwitcher.yourGroups}
           </p>
           {groups.map((g) => (
             <button
@@ -79,7 +81,7 @@ export default function GroupSwitcher({
                 <span className="truncate font-medium text-foreground">{g.name}</span>
                 {g.isExample && (
                   <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-                    Example
+                    {t.common.example}
                   </span>
                 )}
               </span>
@@ -100,7 +102,7 @@ export default function GroupSwitcher({
               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-primary transition hover:bg-secondary"
             >
               <Plus className="h-4 w-4" />
-              New group
+              {t.groupSwitcher.newGroup}
             </button>
           </div>
         </>

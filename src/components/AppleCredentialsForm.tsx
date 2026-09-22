@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, Lock, XCircle } from "lucide-react";
 
 import InfoTip from "@/components/InfoTip";
+import { useT } from "@/i18n/lang";
 
 /**
  * Apple's sign-in form. iCloud has no consent-screen flow for calendars, so
@@ -25,6 +26,7 @@ export default function AppleCredentialsForm({
   onSubmit: (email: string, password: string) => void;
   onCancel: () => void;
 }) {
+  const t = useT();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const emailId = useId();
@@ -48,7 +50,7 @@ export default function AppleCredentialsForm({
           <div className="mt-4 flex flex-col gap-3 border-t pt-4">
             <div className="text-sm">
               <label htmlFor={emailId} className="mb-1 block font-medium text-foreground">
-                Apple ID email
+                {t.appleForm.email}
               </label>
               <input
                 id={emailId}
@@ -66,14 +68,8 @@ export default function AppleCredentialsForm({
                   <label> would take over the label from its input. */}
               <div className="mb-1 flex items-center gap-1.5 font-medium text-foreground">
                 <Lock className="h-3.5 w-3.5" />
-                <label htmlFor={passwordId}>App-specific password</label>
-                <InfoTip label="About app-specific passwords">
-                  Apple has no one-click sign-in for calendars. In Sign-In and Security at
-                  account.apple.com, open App-Specific Passwords and create one for Casy.
-                  Casy never sees your main Apple ID password. It only asks Apple for event
-                  times, never titles, and stores this password encrypted. You can revoke it at any
-                  time in the same place.
-                </InfoTip>
+                <label htmlFor={passwordId}>{t.appleForm.password}</label>
+                <InfoTip label={t.appleForm.about}>{t.appleForm.aboutBody}</InfoTip>
               </div>
               <input
                 id={passwordId}
@@ -99,7 +95,7 @@ export default function AppleCredentialsForm({
                 className="flex items-center gap-2 rounded-full bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition hover:opacity-90 disabled:opacity-60"
               >
                 {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                {submitting ? "Reading calendars" : "Connect"}
+                {submitting ? t.appleForm.reading : t.providerCard.connect}
               </button>
               <button
                 type="button"
@@ -107,7 +103,7 @@ export default function AppleCredentialsForm({
                 onClick={onCancel}
                 className="text-sm text-muted-foreground transition hover:text-foreground"
               >
-                Cancel
+                {t.common.cancel}
               </button>
             </div>
           </div>

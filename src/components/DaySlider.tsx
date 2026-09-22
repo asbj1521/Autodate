@@ -1,6 +1,7 @@
 import { motion, LayoutGroup } from "framer-motion";
 
-import { ALL_DOWS, DOW_SHORT } from "@/lib/weekdays";
+import { useT } from "@/i18n/lang";
+import { ALL_DOWS } from "@/lib/weekdays";
 
 /**
  * The day slider: two zones, with the seven weekday chips sliding between
@@ -22,6 +23,7 @@ export default function DaySlider({
   selected: number[];
   onChange: (dows: number[]) => void;
 }) {
+  const t = useT();
   const inZone = ALL_DOWS.filter((d) => selected.includes(d));
   const outZone = ALL_DOWS.filter((d) => !selected.includes(d));
 
@@ -45,7 +47,7 @@ export default function DaySlider({
               onClick={() => toggle(d)}
               className="min-w-0 flex-1 rounded-md bg-primary py-1.5 text-xs font-semibold text-primary-foreground"
             >
-              {DOW_SHORT[d]}
+              {t.weekdaysShort[d]}
             </motion.button>
           ))}
         </div>
@@ -58,7 +60,7 @@ export default function DaySlider({
                 onClick={() => toggle(d)}
                 className="min-w-0 flex-1 rounded-md bg-secondary py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
               >
-                {DOW_SHORT[d]}
+                {t.weekdaysShort[d]}
               </motion.button>
             ))}
           </div>

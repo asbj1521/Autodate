@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Check, Loader2, X } from "lucide-react";
 
+import { useT } from "@/i18n/lang";
 import { cn } from "@/lib/utils";
 
 /**
@@ -26,6 +27,7 @@ export default function InlineTextEdit({
   onSubmit: (value: string) => void;
   onCancel: () => void;
 }) {
+  const t = useT();
   const [draft, setDraft] = useState(value);
 
   function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -57,7 +59,7 @@ export default function InlineTextEdit({
       <button
         type="submit"
         disabled={submitting || !draft.trim()}
-        title="Save"
+        title={t.common.save}
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-primary transition hover:bg-primary/10 disabled:opacity-50"
       >
         {submitting ? (
@@ -70,7 +72,7 @@ export default function InlineTextEdit({
         type="button"
         onClick={onCancel}
         disabled={submitting}
-        title="Cancel"
+        title={t.common.cancel}
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-secondary disabled:opacity-50"
       >
         <X className="h-3.5 w-3.5" />

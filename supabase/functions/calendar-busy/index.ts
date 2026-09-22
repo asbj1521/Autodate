@@ -15,6 +15,7 @@
 import { callerId } from "../_shared/auth.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
+import { withLanguage } from "../_shared/i18n.ts";
 
 /** A calendar_sources row joined to its connection, as selected below. */
 interface SourceRow {
@@ -44,7 +45,7 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withLanguage(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -124,4 +125,4 @@ Deno.serve(async (req) => {
   }
 
   return json({ calendars, blocks, truncated });
-});
+}));

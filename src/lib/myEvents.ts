@@ -4,6 +4,7 @@
  * rather than trusted to the page.
  */
 import type { SuggestedEvent } from "@/api/events";
+import type { Lang } from "@/i18n/locale";
 import { formatDaySpan, formatSlot, formatTripSpan } from "@/lib/format";
 
 export interface EventSections {
@@ -48,22 +49,28 @@ export function waitingOn(event: SuggestedEvent): string[] {
 }
 
 /** The event's date in the same words the scheduling page uses for its kind. */
-export function eventDateLabel(event: SuggestedEvent): string {
-  if (!event.currentDate) return "No date";
+export function eventDateLabel(event: SuggestedEvent, lang: Lang): string {
+  if (!event.currentDate) return lang === "da" ? "Ingen dato" : "No date";
   const { start, end } = event.currentDate;
   switch (event.settings.kind) {
     case "vacation":
-      return formatDaySpan(start, end);
+      return formatDaySpan(start, end, lang);
     case "trip":
-      return formatTripSpan(start, end);
+      return formatTripSpan(start, end, lang);
     default:
-      return formatSlot(start, end);
+      return formatSlot(start, end, lang);
   }
 }
 
+const AND: Record<Lang, string> = { da: "og", en: "and" };
+const MORE: Record<Lang, (n: number) => string> = {
+  da: (n) => `${n} andre`,
+  en: (n) => `${n} more`,
+};
+
 /** "Emilie", "Emilie and Tessa", or "Emilie, Tessa and 2 more". */
-export function nameList(names: string[]): string {
+export function nameList(names: string[], lang: Lang): string {
   if (names.length <= 1) return names[0] ?? "";
-  if (names.length === 2) return `${names[0]} and ${names[1]}`;
-  return `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`;
+  if (names.length === 2) return `${names[0]} ${AND[lang]} ${names[1]}`;
+  return `${names.slice(0, 2).join(", ")} ${AND[lang]} ${MORE[lang](names.length - 2)}`;
 }

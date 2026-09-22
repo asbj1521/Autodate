@@ -10,6 +10,7 @@ import { queryOptions } from "@tanstack/react-query";
 
 import { callFunction } from "@/lib/supabaseFunctions";
 import type { CalendarProvider } from "@/types";
+import { currentMessages } from "@/i18n/current";
 
 export interface AdminStats {
   users: number;
@@ -68,7 +69,7 @@ export function adminStatusQuery(userId: string) {
       (
         await callFunction<{ isAdmin: boolean }>("admin", {
           body: { action: "status" },
-          errorMessage: "Couldn't check admin access",
+          errorMessage: currentMessages().api.checkAdmin,
         })
       ).isAdmin,
     // Being an admin changes only when the secret does, so asking now and then
@@ -90,7 +91,7 @@ export function adminOverviewQuery(userId: string) {
     queryFn: () =>
       callFunction<AdminOverview>("admin", {
         body: { action: "overview" },
-        errorMessage: "Couldn't load the admin overview",
+        errorMessage: currentMessages().api.loadAdmin,
       }),
     staleTime: 30_000,
   });
@@ -99,7 +100,7 @@ export function adminOverviewQuery(userId: string) {
 export async function adminDeleteGroup(groupId: string): Promise<{ outcome: "deleted" }> {
   return await callFunction("admin", {
     body: { action: "deleteGroup", groupId },
-    errorMessage: "Couldn't delete the group",
+    errorMessage: currentMessages().api.adminDeleteGroup,
   });
 }
 
@@ -110,7 +111,7 @@ export async function adminRemoveMember(args: {
 }): Promise<{ outcome: "left" | "group_deleted" }> {
   return await callFunction("admin", {
     body: { action: "removeMember", ...args },
-    errorMessage: "Couldn't remove them from the group",
+    errorMessage: currentMessages().api.adminRemoveMember,
   });
 }
 
@@ -123,7 +124,7 @@ export async function adminDeleteUser(
 ): Promise<{ outcome: "deleted"; leftGroups: number; deletedGroups: number }> {
   return await callFunction("admin", {
     body: { action: "deleteUser", profileId },
-    errorMessage: "Couldn't delete the account",
+    errorMessage: currentMessages().api.adminDeleteAccount,
   });
 }
 
@@ -132,6 +133,6 @@ export async function adminSyncConnection(
 ): Promise<{ ok: boolean; message?: string; busyBlocks?: number }> {
   return await callFunction("admin", {
     body: { action: "syncConnection", connectionId },
-    errorMessage: "Couldn't sync that account",
+    errorMessage: currentMessages().api.adminSync,
   });
 }

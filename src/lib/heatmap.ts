@@ -16,6 +16,7 @@ import {
   spanAvailability,
   type WeeklySpanShape,
 } from "@/lib/availability";
+import { mondayFirstWeekdays } from "@/lib/dateLabels";
 import type { Participant } from "@/types";
 import { addDays, atHour, localDate, startOfDay, wallTime } from "@/lib/zone";
 
@@ -54,10 +55,6 @@ export interface MonthGrid {
   total: number;
 }
 
-// Danish weekday abbreviations indexed by day of week (0 = Sun … 6 = Sat).
-const DOW_LABELS = ["søn.", "man.", "tirs.", "ons.", "tors.", "fre.", "lør."];
-// Monday-first column order: man, tirs, ons, tors, fre, lør, søn.
-const MON_FIRST_LABELS = [1, 2, 3, 4, 5, 6, 0].map((i) => DOW_LABELS[i]);
 
 /** True if the participant has no busy block overlapping [start, end). */
 function isFree(participant: Participant, start: number, end: number): boolean {
@@ -118,6 +115,8 @@ export interface MonthGridOptions {
    * other days are excluded. Takes precedence over `multiDay`.
    */
   weeklySpan?: WeeklySpanShape & { windowEndMs: number };
+  /** Locale for the month heading and weekday headers. Defaults to Danish. */
+  locale?: string;
 }
 
 /**
@@ -219,14 +218,15 @@ export function buildMonthGrid(
     weeks.push(row);
   }
 
-  const monthName = new Date(firstOfMonth).toLocaleString("da-DK", {
+  const locale = opts.locale ?? "da-DK";
+  const monthName = new Date(firstOfMonth).toLocaleString(locale, {
     month: "long",
     timeZone,
   });
 
   return {
     label: `${monthName} ${year}`,
-    weekdayLabels: MON_FIRST_LABELS,
+    weekdayLabels: mondayFirstWeekdays(locale),
     weeks,
     total: participants.length,
   };

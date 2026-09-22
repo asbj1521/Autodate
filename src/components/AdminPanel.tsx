@@ -26,11 +26,11 @@ import {
 } from "@/api/admin";
 import StatTile from "@/components/StatTile";
 import { withoutGroup, withoutMember, withoutUser } from "@/lib/adminOverview";
-import { plural, syncedAgo } from "@/lib/accountSummary";
+import { syncedAgo } from "@/lib/accountSummary";
 import { avatarColor } from "@/lib/avatar";
+import { LOCALE, useLang, useT } from "@/i18n/lang";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { CalendarProvider } from "@/types";
 
 type Tab = "groups" | "users" | "calendars";
 
@@ -38,13 +38,6 @@ type Tab = "groups" | "users" | "calendars";
 type Confirm =
   | { kind: "group"; groupId: string }
   | { kind: "member"; groupId: string; profileId: string };
-
-const PROVIDER_LABELS: Record<CalendarProvider, string> = {
-  google: "Google",
-  outlook: "Outlook",
-  apple: "iCloud",
-  ics: "Calendar link",
-};
 
 /** The error text of whichever mutation failed, for the row it failed on. */
 function messageOf(err: unknown, fallback: string): string {
@@ -73,6 +66,7 @@ function ConfirmBox({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const t = useT();
   return (
     <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
       <p>{text}</p>
@@ -93,7 +87,7 @@ function ConfirmBox({
           disabled={pending}
           className="text-sm text-red-900/80 transition hover:text-red-900"
         >
-          Cancel
+          {t.common.cancel}
         </button>
       </div>
     </div>
@@ -123,6 +117,8 @@ function GroupRow({
   onDelete: () => void;
   onRemove: (profileId: string) => void;
 }) {
+  const { lang } = useLang();
+  const t = useT();
   const removing = confirm?.kind === "member" ? group.members.find((m) => m.profileId === confirm.profileId) : null;
   const lastOne = group.members.length <= 1;
 
@@ -132,8 +128,11 @@ function GroupRow({
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-foreground">{group.name}</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {plural(group.members.length, "member")} · made {formatDate(group.createdAt)}
-            {group.createdByName && ` by ${group.createdByName}`}
+            {t.admin.groupMeta(
+              t.counts.members(group.members.length),
+              formatDate(group.createdAt, lang),
+              group.createdByName,
+            )}
           </p>
           <ul className="mt-2 flex flex-wrap gap-1.5">
             {group.members.map((m, i) => (
@@ -153,7 +152,7 @@ function GroupRow({
                 <button
                   type="button"
                   onClick={() => onAskRemove(m.profileId)}
-                  title={`Remove ${m.name} from ${group.name}`}
+                  title={t.admin.removeMemberTitle(m.name, group.name)}
                   className="flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground transition hover:bg-red-100 hover:text-red-700"
                 >
                   {removingId === m.profileId ? (
@@ -169,7 +168,7 @@ function GroupRow({
         <button
           type="button"
           onClick={onAskDelete}
-          title="Delete this group for everyone"
+          title={t.admin.deleteGroupTitle}
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-background text-muted-foreground transition hover:bg-red-50 hover:text-red-700"
         >
           <Trash2 className="h-3.5 w-3.5" />
@@ -178,8 +177,8 @@ function GroupRow({
 
       {confirm?.kind === "group" && (
         <ConfirmBox
-          text={`Delete "${group.name}"? All ${plural(group.members.length, "member")} lose it right away, along with its invite links. This can't be undone.`}
-          action="Delete group"
+          text={t.admin.deleteGroupConfirm(group.name, group.members.length)}
+          action={t.admin.deleteGroup}
           pending={deleting}
           error={error}
           onConfirm={onDelete}
@@ -190,10 +189,10 @@ function GroupRow({
         <ConfirmBox
           text={
             lastOne
-              ? `Remove ${removing.name}? They are the only member, so "${group.name}" is deleted too.`
-              : `Remove ${removing.name} from "${group.name}"? They'll need a new invite link to get back in.`
+              ? t.admin.removeLast(removing.name, group.name)
+              : t.admin.removeMember(removing.name, group.name)
           }
-          action={lastOne ? "Remove and delete" : "Remove"}
+          action={lastOne ? t.admin.removeAndDelete : t.admin.remove}
           pending={removingId === removing.profileId}
           error={error}
           onConfirm={() => onRemove(removing.profileId)}
@@ -236,6 +235,8 @@ function UserRow({
   onCancel: () => void;
   onDelete: () => void;
 }) {
+  const { lang } = useLang();
+  const t = useT();
   const [typed, setTyped] = useState("");
   const inputId = useId();
   // Typing the name is the guard against deleting the wrong row: the button
@@ -243,12 +244,12 @@ function UserRow({
   const nameMatches = typed.trim().toLowerCase() === user.name.trim().toLowerCase();
 
   const parts = [
-    plural(impact.calendarAccounts, "calendar account"),
+    t.admin.impactAccounts(impact.calendarAccounts),
     impact.groups === 0
-      ? "no groups"
+      ? t.admin.impactNoGroups
       : impact.soleGroups > 0
-        ? `${plural(impact.groups, "group membership")} (${impact.soleGroups} of them ${impact.soleGroups === 1 ? "a group" : "groups"} only they are in, deleted too)`
-        : plural(impact.groups, "group membership"),
+        ? t.admin.impactSole(impact.groups, impact.soleGroups)
+        : t.admin.impactGroups(impact.groups),
   ];
 
   return (
@@ -267,19 +268,19 @@ function UserRow({
             {user.name}
             {isYou && (
               <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-                You
+                {t.admin.you}
               </span>
             )}
           </p>
           <p className="text-xs text-muted-foreground">
-            Joined {formatDate(user.createdAt)}
-            {user.lastSignInAt && ` · last signed in ${formatDate(user.lastSignInAt)}`}
+            {t.admin.joined(formatDate(user.createdAt, lang))}
+            {user.lastSignInAt && t.admin.lastSignIn(formatDate(user.lastSignInAt, lang))}
           </p>
         </div>
         <div className="flex shrink-0 gap-4 text-right text-xs text-muted-foreground">
           <span>
             <span className="block text-sm font-semibold tabular-nums text-foreground">{user.groups}</span>
-            groups
+            {t.admin.groupsLabel}
           </span>
           <span>
             <span
@@ -290,7 +291,7 @@ function UserRow({
             >
               {user.calendars}
             </span>
-            calendars
+            {t.admin.calendarsLabel}
           </span>
         </div>
         {/* Never on your own row: the server refuses it too. */}
@@ -303,7 +304,7 @@ function UserRow({
               setTyped("");
               onAsk();
             }}
-            title={`Delete ${user.name}'s account`}
+            title={t.admin.deleteUserTitle(user.name)}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-background text-muted-foreground transition hover:bg-red-50 hover:text-red-700"
           >
             <Trash2 className="h-3.5 w-3.5" />
@@ -313,13 +314,9 @@ function UserRow({
 
       {confirming && (
         <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
-          <p>
-            Delete {user.name}'s account? This removes their {parts.join(" and ")}, along with every
-            busy time Casy stored for them. Groups other people are in carry on without them. This
-            can't be undone, and it isn't a ban: they can sign up again.
-          </p>
+          <p>{t.admin.deleteUserConfirm(user.name, parts.join(t.admin.and))}</p>
           <label htmlFor={inputId} className="mt-3 block text-xs font-medium">
-            Type <span className="font-semibold">{user.name}</span> to confirm
+            {t.admin.typeToConfirm(<span className="font-semibold">{user.name}</span>)}
           </label>
           <input
             id={inputId}
@@ -338,7 +335,7 @@ function UserRow({
               className="flex items-center gap-1.5 rounded-full bg-red-600 px-4 py-1.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
             >
               {deleting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              Delete account
+              {t.admin.deleteAccount}
             </button>
             <button
               type="button"
@@ -346,7 +343,7 @@ function UserRow({
               disabled={deleting}
               className="text-sm text-red-900/80 transition hover:text-red-900"
             >
-              Cancel
+              {t.common.cancel}
             </button>
           </div>
         </div>
@@ -368,9 +365,10 @@ function ConnectionRow({
   result: { ok: boolean; text: string } | null;
   onSync: () => void;
 }) {
+  const t = useT();
   const c = connection;
   const broken = c.status === "connected" && (c.needsReconnect || !!c.syncError);
-  const synced = syncedAgo(c.lastSyncedAt, now);
+  const synced = syncedAgo(c.lastSyncedAt, now, t.synced);
 
   return (
     <li className="py-3">
@@ -384,17 +382,17 @@ function ConnectionRow({
         )}
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-foreground">
-            {c.ownerName} <span className="font-normal text-muted-foreground">· {PROVIDER_LABELS[c.provider]}</span>
+            {c.ownerName} <span className="font-normal text-muted-foreground">· {t.admin.providers[c.provider]}</span>
           </p>
           <p className="text-xs text-muted-foreground">
             {c.status === "connected"
-              ? `${plural(c.calendars, "calendar")} · ${synced ?? "never synced"}`
+              ? `${t.counts.calendars(c.calendars)} · ${synced ?? t.admin.neverSynced}`
               : c.status === "pending"
-                ? "Connecting, never finished"
-                : "Connecting failed"}
+                ? t.admin.connectingNeverFinished
+                : t.admin.connectingFailed}
           </p>
           {c.needsReconnect ? (
-            <p className="mt-0.5 text-xs font-medium text-amber-700">Needs the owner to reconnect.</p>
+            <p className="mt-0.5 text-xs font-medium text-amber-700">{t.admin.needsReconnect}</p>
           ) : (
             c.syncError && <p className="mt-0.5 text-xs text-amber-700">{c.syncError}</p>
           )}
@@ -409,7 +407,7 @@ function ConnectionRow({
             type="button"
             onClick={onSync}
             disabled={syncing}
-            title="Sync this account now"
+            title={t.admin.syncTitle}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-background text-muted-foreground transition hover:bg-secondary hover:text-foreground disabled:opacity-60"
           >
             <RefreshCw className={cn("h-3.5 w-3.5", syncing && "animate-spin")} />
@@ -429,6 +427,8 @@ function ConnectionRow({
  * `admin` Edge Function.
  */
 export default function AdminPanel({ youId }: { youId: string }) {
+  const t = useT();
+  const { lang } = useLang();
   const queryClient = useQueryClient();
   const { data, isPending, isError, error, refetch, isFetching } = useQuery(adminOverviewQuery(youId));
   const [tab, setTab] = useState<Tab>("groups");
@@ -467,11 +467,8 @@ export default function AdminPanel({ youId }: { youId: string }) {
   const deleteUserMutation = useMutation({
     mutationFn: adminDeleteUser,
     onSuccess: (res, profileId) => {
-      const who = data?.users.find((u) => u.id === profileId)?.name ?? "The account";
-      setNotice(
-        `${who} was deleted` +
-          (res.deletedGroups > 0 ? `, along with ${plural(res.deletedGroups, "group")} only they were in.` : "."),
-      );
+      const who = data?.users.find((u) => u.id === profileId)?.name ?? t.admin.theAccount;
+      setNotice(t.admin.userDeleted(who, res.deletedGroups));
       afterChange((o) => withoutUser(o, profileId));
     },
   });
@@ -481,14 +478,14 @@ export default function AdminPanel({ youId }: { youId: string }) {
       setSyncResults((r) => ({
         ...r,
         [connectionId]: res.ok
-          ? { ok: true, text: `Synced: ${plural(res.busyBlocks ?? 0, "busy block")}.` }
-          : { ok: false, text: res.message ?? "Sync failed." },
+          ? { ok: true, text: t.admin.syncedBlocks(res.busyBlocks ?? 0) }
+          : { ok: false, text: res.message ?? t.admin.syncFailed },
       }));
       void queryClient.invalidateQueries({ queryKey: adminOverviewKey(youId) });
       void queryClient.invalidateQueries({ queryKey: ["calendar-status"] });
     },
     onError: (err, connectionId) => {
-      setSyncResults((r) => ({ ...r, [connectionId]: { ok: false, text: messageOf(err, "Sync failed.") } }));
+      setSyncResults((r) => ({ ...r, [connectionId]: { ok: false, text: messageOf(err, t.admin.syncFailed) } }));
     },
   });
 
@@ -515,9 +512,9 @@ export default function AdminPanel({ youId }: { youId: string }) {
 
   const groupError = (groupId: string) =>
     deleteMutation.isError && deleteMutation.variables === groupId
-      ? messageOf(deleteMutation.error, "Couldn't delete the group")
+      ? messageOf(deleteMutation.error, t.admin.couldntDeleteGroup)
       : removeMutation.isError && removeMutation.variables?.groupId === groupId
-        ? messageOf(removeMutation.error, "Couldn't remove them")
+        ? messageOf(removeMutation.error, t.admin.couldntRemove)
         : null;
 
   const groups = useMemo(
@@ -538,18 +535,18 @@ export default function AdminPanel({ youId }: { youId: string }) {
     () =>
       (data?.connections ?? []).filter(
         (c) =>
-          matches(query, c.ownerName, PROVIDER_LABELS[c.provider]) &&
+          matches(query, c.ownerName, t.admin.providers[c.provider]) &&
           (!problemsOnly || c.status !== "connected" || c.needsReconnect || !!c.syncError),
       ),
-    [data, query, problemsOnly],
+    [data, query, problemsOnly, t],
   );
 
   const tabs: { id: Tab; label: string; count: number | undefined }[] = [
-    { id: "groups", label: "Groups", count: data?.groups.length },
-    { id: "users", label: "Users", count: data?.users.length },
-    { id: "calendars", label: "Calendar health", count: data?.connections.length },
+    { id: "groups", label: t.admin.tabGroups, count: data?.groups.length },
+    { id: "users", label: t.admin.tabUsers, count: data?.users.length },
+    { id: "calendars", label: t.admin.tabCalendars, count: data?.connections.length },
   ];
-  const problemsLabel = tab === "users" ? "Only users without a calendar" : "Only problems";
+  const problemsLabel = tab === "users" ? t.admin.onlyNoCalendar : t.admin.onlyProblems;
   const stats = data?.stats;
 
   return (
@@ -558,12 +555,9 @@ export default function AdminPanel({ youId }: { youId: string }) {
         <div>
           <h2 className="flex items-center gap-2 text-lg font-semibold text-foreground">
             <ShieldCheck className="h-5 w-5 text-primary" />
-            Admin
+            {t.admin.title}
           </h2>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            All of Casy, for you only. Names, dates and sync health; never emails, busy times or
-            event details.
-          </p>
+          <p className="mt-0.5 text-sm text-muted-foreground">{t.admin.intro}</p>
         </div>
         <button
           type="button"
@@ -572,22 +566,22 @@ export default function AdminPanel({ youId }: { youId: string }) {
           className="flex shrink-0 items-center gap-2 rounded-full border bg-background px-3.5 py-1.5 text-sm font-semibold text-foreground transition hover:bg-secondary disabled:opacity-60"
         >
           <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
-          Refresh
+          {t.admin.refresh}
         </button>
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
-        <StatTile label="Users" value={stats?.users ?? null} />
-        <StatTile label="Groups" value={stats?.groups ?? null} />
-        <StatTile label="Connected accounts" value={stats?.connectedAccounts ?? null} />
-        <StatTile label="Failing syncs" value={stats?.failingSyncs ?? null} alert={!!stats?.failingSyncs} />
-        <StatTile label="Busy blocks stored" value={stats?.busyBlocks ?? null} />
+        <StatTile label={t.admin.statUsers} value={stats?.users ?? null} />
+        <StatTile label={t.admin.statGroups} value={stats?.groups ?? null} />
+        <StatTile label={t.admin.statAccounts} value={stats?.connectedAccounts ?? null} />
+        <StatTile label={t.admin.statFailing} value={stats?.failingSyncs ?? null} alert={!!stats?.failingSyncs} />
+        <StatTile label={t.admin.statBusy} value={stats?.busyBlocks ?? null} />
       </div>
 
       {isError && (
         <div className="mt-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
           <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{messageOf(error, "Couldn't load the admin overview")}</span>
+          <span>{messageOf(error, t.admin.couldntLoad)}</span>
         </div>
       )}
 
@@ -595,7 +589,7 @@ export default function AdminPanel({ youId }: { youId: string }) {
         <div className="mt-4 flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
           <span className="flex-1">{notice}</span>
-          <button type="button" onClick={() => setNotice(null)} title="Dismiss" className="text-emerald-900/70 hover:text-emerald-900">
+          <button type="button" onClick={() => setNotice(null)} title={t.admin.dismiss} className="text-emerald-900/70 hover:text-emerald-900">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -604,26 +598,26 @@ export default function AdminPanel({ youId }: { youId: string }) {
       <div className="mt-6 rounded-2xl border bg-card p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex rounded-full bg-secondary p-1">
-            {tabs.map((t) => (
+            {tabs.map((item) => (
               <button
-                key={t.id}
+                key={item.id}
                 type="button"
                 onClick={() => {
-                  setTab(t.id);
+                  setTab(item.id);
                   setConfirm(null);
                   setConfirmUserId(null);
                   setProblemsOnly(false);
                 }}
                 className={cn(
                   "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition",
-                  tab === t.id
+                  tab === item.id
                     ? "bg-card text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground",
                 )}
               >
-                {t.label}
-                {t.count !== undefined && (
-                  <span className="text-xs tabular-nums text-muted-foreground">{t.count}</span>
+                {item.label}
+                {item.count !== undefined && (
+                  <span className="text-xs tabular-nums text-muted-foreground">{item.count}</span>
                 )}
               </button>
             ))}
@@ -646,7 +640,7 @@ export default function AdminPanel({ youId }: { youId: string }) {
                 type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search by name"
+                placeholder={t.admin.search}
                 className="w-48 rounded-full border bg-background py-1.5 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-primary/30"
               />
             </div>
@@ -656,12 +650,12 @@ export default function AdminPanel({ youId }: { youId: string }) {
         {isPending ? (
           <p className="mt-4 flex items-center gap-2 border-t pt-4 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Loading everything…
+            {t.admin.loading}
           </p>
         ) : tab === "groups" ? (
           groups.length === 0 ? (
             <p className="mt-4 border-t pt-4 text-sm text-muted-foreground">
-              {query ? "No group matches that." : "Nobody has made a group yet."}
+              {query ? t.admin.noGroupMatch : t.admin.noGroups}
             </p>
           ) : (
             <ul className="mt-4 divide-y border-t">
@@ -690,11 +684,11 @@ export default function AdminPanel({ youId }: { youId: string }) {
           <>
             {data?.usersTruncated && (
               <p className="mt-4 text-xs text-amber-700">
-                Showing the first {data.users.length.toLocaleString("en-GB")} accounts only.
+                {t.admin.firstOnly(data.users.length.toLocaleString(LOCALE[lang]))}
               </p>
             )}
             {users.length === 0 ? (
-              <p className="mt-4 border-t pt-4 text-sm text-muted-foreground">No user matches that.</p>
+              <p className="mt-4 border-t pt-4 text-sm text-muted-foreground">{t.admin.noUserMatch}</p>
             ) : (
               <ul className="mt-4 divide-y border-t">
                 {users.map((u, i) => (
@@ -708,7 +702,7 @@ export default function AdminPanel({ youId }: { youId: string }) {
                     deleting={deleteUserMutation.isPending && deleteUserMutation.variables === u.id}
                     error={
                       deleteUserMutation.isError && deleteUserMutation.variables === u.id
-                        ? messageOf(deleteUserMutation.error, "Couldn't delete the account")
+                        ? messageOf(deleteUserMutation.error, t.admin.couldntDeleteAccount)
                         : null
                     }
                     onAsk={() => askDeleteUser(u.id)}
@@ -721,7 +715,7 @@ export default function AdminPanel({ youId }: { youId: string }) {
           </>
         ) : connections.length === 0 ? (
           <p className="mt-4 border-t pt-4 text-sm text-muted-foreground">
-            {problemsOnly ? "No problems. Every account is syncing." : "No calendar accounts match that."}
+            {problemsOnly ? t.admin.noProblems : t.admin.noAccountMatch}
           </p>
         ) : (
           <ul className="mt-4 divide-y border-t">

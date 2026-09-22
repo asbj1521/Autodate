@@ -83,8 +83,13 @@ describe("sectionEvents", () => {
 
 describe("nameList", () => {
   it("reads naturally for one, two and many", () => {
-    expect(nameList(["Emilie"])).toBe("Emilie");
-    expect(nameList(["Emilie", "Tessa"])).toBe("Emilie and Tessa");
-    expect(nameList(["Emilie", "Tessa", "Simon", "Nora"])).toBe("Emilie, Tessa and 2 more");
+    expect(nameList(["Emilie"], "en")).toBe("Emilie");
+    expect(nameList(["Emilie", "Tessa"], "en")).toBe("Emilie and Tessa");
+    expect(nameList(["Emilie", "Tessa", "Simon", "Nora"], "en")).toBe("Emilie, Tessa and 2 more");
+  });
+
+  it("joins names in Danish", () => {
+    expect(nameList(["Emilie", "Tessa"], "da")).toBe("Emilie og Tessa");
+    expect(nameList(["Emilie", "Tessa", "Simon", "Nora"], "da")).toBe("Emilie, Tessa og 2 andre");
   });
 });

@@ -13,8 +13,8 @@ import {
 } from "lucide-react";
 
 import type { CalendarConnectionStatus } from "@/api/calendarStatus";
-import InfoTip from "@/components/InfoTip";
-import { calendarNames, hasDistinctCalendarNames, plural, syncedAgo } from "@/lib/accountSummary";
+import { useT } from "@/i18n/lang";
+import { calendarNames, hasDistinctCalendarNames, syncedAgo } from "@/lib/accountSummary";
 import { cn } from "@/lib/utils";
 import type { CalendarProvider } from "@/types";
 
@@ -24,38 +24,16 @@ export interface ProviderMeta {
   /** The brand's own mark, not a generic icon: a real logo, not an initial. */
   icon: ReactNode;
   badgeClass: string;
-  /** Shown behind the (i), not on the card. Omit when `help` is set. */
-  description?: string;
-  /** A route to a longer guide, shown as a button beside the label instead of the (i). */
-  help?: { to: string; label: string };
+  /** A route to the provider's step-by-step guide, shown beside the label. */
+  help: { to: string; label: string };
 }
 
 /** What "remove" explains, since each provider revokes access somewhere different. */
 function RemoveNote({ provider, label }: { provider: CalendarProvider; label: string | null }) {
-  if (provider === "ics") {
-    return (
-      <>
-        Remove {label ?? "this link"}? Its synced busy times and the saved link are deleted from
-        Casy. The link itself stays valid at its source until you regenerate it there.
-      </>
-    );
-  }
-  if (provider === "apple") {
-    return (
-      <>
-        Remove {label ?? "this account"}? Its synced busy times and the saved password are deleted
-        from Casy. To also revoke the password itself, delete it under App-Specific Passwords
-        at account.apple.com.
-      </>
-    );
-  }
-  return (
-    <>
-      Remove {label ?? "this account"}? Its synced busy times are deleted from Casy. To also
-      revoke Casy's access, remove it in that account's connected-apps settings at{" "}
-      {provider === "google" ? "Google" : "Microsoft"}.
-    </>
-  );
+  const t = useT();
+  if (provider === "ics") return <>{t.providerCard.removeIcs(label)}</>;
+  if (provider === "apple") return <>{t.providerCard.removeApple(label)}</>;
+  return <>{t.providerCard.removeOauth(label, provider === "google" ? "Google" : "Microsoft")}</>;
 }
 
 /** One connected account: its label, a one-line summary, and its actions. */
@@ -80,12 +58,13 @@ function AccountRow({
   onCancelRemove: () => void;
   onRemove: () => void;
 }) {
+  const t = useT();
   const [namesOpen, setNamesOpen] = useState(false);
   const count = account.calendar_sources.length;
   // The clock is read once, when the row appears: rendering must not depend
   // on the time it happens to run, and minutes-level freshness is plenty.
   const [now] = useState(Date.now);
-  const synced = syncedAgo(account.last_synced_at, now);
+  const synced = syncedAgo(account.last_synced_at, now, t.synced);
   const reconnect = account.needs_reconnect;
   // Names are only worth a click when they say more than the row's own title.
   const expandable = hasDistinctCalendarNames(account);
@@ -100,7 +79,7 @@ function AccountRow({
         )}
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-foreground">
-            {account.account_label ?? "unknown account"}
+            {account.account_label ?? t.providerCard.unknownAccount}
           </p>
           <p className="flex flex-wrap items-center gap-x-1 text-xs text-muted-foreground">
             {expandable ? (
@@ -110,29 +89,27 @@ function AccountRow({
                 aria-expanded={namesOpen}
                 className="inline-flex items-center gap-0.5 transition hover:text-foreground"
               >
-                {plural(count, "calendar")}
+                {t.counts.calendars(count)}
                 <ChevronDown
                   className={cn("h-3 w-3 transition-transform", namesOpen && "rotate-180")}
                 />
               </button>
             ) : (
-              <span>{plural(count, "calendar")}</span>
+              <span>{t.counts.calendars(count)}</span>
             )}
-            <span>· {plural(account.busyCount, "busy block")}</span>
+            <span>· {t.counts.busyBlocks(account.busyCount)}</span>
             {synced && <span>· {synced}</span>}
             {/* A temporary failure: the busy times shown are the last good
                 ones and the next run retries, so this stays quiet. */}
             {account.sync_error && !reconnect && (
               <span className="text-amber-700" title={account.sync_error}>
-                · last sync failed, retrying
+                {t.providerCard.lastSyncFailed}
               </span>
             )}
           </p>
           {reconnect && (
             <p className="mt-0.5 text-xs font-medium text-amber-700">
-              {provider === "ics"
-                ? "This link stopped working. Remove it and add it again."
-                : "Access expired. Reconnect this account to keep it in sync."}
+              {provider === "ics" ? t.providerCard.linkStopped : t.providerCard.accessExpired}
             </p>
           )}
         </div>
@@ -141,7 +118,7 @@ function AccountRow({
             <button
               type="button"
               onClick={onReconnect}
-              title="Reconnect (pick this account again)"
+              title={t.providerCard.reconnectTitle}
               className={cn(
                 "flex h-8 w-8 items-center justify-center rounded-full border transition",
                 reconnect
@@ -155,7 +132,7 @@ function AccountRow({
           <button
             type="button"
             onClick={onAskRemove}
-            title="Remove this account"
+            title={t.providerCard.removeTitle}
             className="flex h-8 w-8 items-center justify-center rounded-full border bg-background text-muted-foreground transition hover:bg-red-50 hover:text-red-700"
           >
             <Trash2 className="h-3.5 w-3.5" />
@@ -190,7 +167,7 @@ function AccountRow({
               className="flex items-center gap-1.5 rounded-full bg-red-600 px-4 py-1.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-60"
             >
               {removing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              Remove
+              {t.providerCard.remove}
             </button>
             <button
               type="button"
@@ -198,7 +175,7 @@ function AccountRow({
               disabled={removing}
               className="text-sm text-red-900/80 transition hover:text-red-900"
             >
-              Cancel
+              {t.common.cancel}
             </button>
           </div>
         </div>
@@ -208,9 +185,9 @@ function AccountRow({
 }
 
 /**
- * One calendar brand on the profile page: its name (with the long description
- * behind an (i)), the accounts connected under it, and the button that adds
- * another. Forms and result lines the page owns are passed in as children.
+ * One calendar brand on the profile page: its name and a link to its guide,
+ * the accounts connected under it, and the button that adds another. Forms
+ * and result lines the page owns are passed in as children.
  */
 export default function ProviderCard({
   meta,
@@ -244,16 +221,16 @@ export default function ProviderCard({
   onRemove: (connectionId: string) => void;
   children?: ReactNode;
 }) {
+  const t = useT();
   const isLink = meta.id === "ics";
-  const buttonLabel = isLink
-    ? accounts.length > 0
-      ? "Add another"
-      : "Add link"
-    : accounts.length > 0
-      ? "Add another"
+  const addingAnother = accounts.length > 0;
+  const buttonLabel = addingAnother
+    ? t.providerCard.addAnother
+    : isLink
+      ? t.providerCard.addLink
       : latest?.status === "error"
-        ? "Try again"
-        : "Connect";
+        ? t.providerCard.tryAgain
+        : t.providerCard.connect;
 
   return (
     <div className="rounded-2xl border bg-card p-4 shadow-sm sm:p-5">
@@ -273,19 +250,13 @@ export default function ProviderCard({
             <h3 className="font-semibold leading-tight text-foreground sm:truncate">
               {meta.label}
             </h3>
-            {meta.help ? (
-              <Link
-                to={meta.help.to}
-                className="mt-0.5 flex w-fit items-center gap-1 text-xs font-medium text-muted-foreground transition hover:text-foreground sm:mt-0 sm:shrink-0 sm:gap-1.5 sm:rounded-full sm:border sm:bg-background sm:px-2.5 sm:py-1 sm:hover:bg-secondary"
-              >
-                <HelpCircle className="h-3.5 w-3.5" />
-                {meta.help.label}
-              </Link>
-            ) : (
-              meta.description && (
-                <InfoTip label={`About ${meta.label}`}>{meta.description}</InfoTip>
-              )
-            )}
+            <Link
+              to={meta.help.to}
+              className="mt-0.5 flex w-fit items-center gap-1 text-xs font-medium text-muted-foreground transition hover:text-foreground sm:mt-0 sm:shrink-0 sm:gap-1.5 sm:rounded-full sm:border sm:bg-background sm:px-2.5 sm:py-1 sm:hover:bg-secondary"
+            >
+              <HelpCircle className="h-3.5 w-3.5" />
+              {meta.help.label}
+            </Link>
           </div>
         </div>
 
@@ -295,12 +266,12 @@ export default function ProviderCard({
           // list of accounts a moment later.
           <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-sm font-medium text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Checking
+            {t.providerCard.checking}
           </span>
         ) : latest?.status === "pending" ? (
           <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-sm font-medium text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Connecting
+            {t.providerCard.connecting}
           </span>
         ) : (
           !formOpen && (
@@ -310,10 +281,10 @@ export default function ProviderCard({
               className="flex shrink-0 items-center gap-2 rounded-full border bg-background px-3.5 py-1.5 text-sm font-semibold text-foreground transition hover:bg-secondary"
             >
               <CalendarPlus className="h-4 w-4" />
-              {buttonLabel === "Add another" ? (
+              {addingAnother ? (
                 <>
-                  <span className="sm:hidden">Add</span>
-                  <span className="hidden sm:inline">Add another</span>
+                  <span className="sm:hidden">{t.providerCard.addShort}</span>
+                  <span className="hidden sm:inline">{buttonLabel}</span>
                 </>
               ) : (
                 buttonLabel
@@ -342,7 +313,7 @@ export default function ProviderCard({
         </ul>
       ) : (
         !statusPending && (
-          <p className="mt-3 border-t pt-3 text-sm text-muted-foreground">Not connected yet.</p>
+          <p className="mt-3 border-t pt-3 text-sm text-muted-foreground">{t.providerCard.notConnected}</p>
         )
       )}
 
@@ -351,7 +322,7 @@ export default function ProviderCard({
       {latest?.status === "error" && (
         <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
           <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>Last attempt failed: {latest.error_message ?? "unknown error"}</span>
+          <span>{t.providerCard.lastFailed(latest.error_message ?? t.providerCard.unknownError)}</span>
         </div>
       )}
 

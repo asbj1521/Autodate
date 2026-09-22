@@ -24,7 +24,8 @@ import PasswordForm from "@/components/PasswordForm";
 import ProviderCard, { type ProviderMeta } from "@/components/ProviderCard";
 import TopNav from "@/components/TopNav";
 import { displayName, useAuth } from "@/context/auth";
-import { plural } from "@/lib/accountSummary";
+import { authErrorMessage } from "@/i18n/authError";
+import { useT } from "@/i18n/lang";
 import { avatarColor } from "@/lib/avatar";
 import { MAX_DISPLAY_NAME_LENGTH } from "@/lib/groups";
 import { supabase } from "@/lib/supabase";
@@ -63,42 +64,37 @@ function attemptsFor(
 }
 
 /**
- * The descriptions are what the card's (i) shows, so they can afford to be
- * complete. Apple and the ICS link come first: they take a form to fill in,
+ * Apple and the ICS link come first: they take a form to fill in,
  * so putting them ahead of the one-click Google/Outlook cards keeps the grid
  * from alternating between quick cards and ones that need typing.
  */
-const PROVIDERS: ProviderMeta[] = [
+const PROVIDERS: (Omit<ProviderMeta, "label" | "help"> & { helpTo: string })[] = [
   {
     id: "apple",
-    label: "Apple iCloud Calendar",
     icon: <SiApple className="h-4 w-4 text-neutral-800" />,
     badgeClass: "bg-neutral-200",
-    help: { to: "/help/connect-icloud", label: "How to connect iCloud" },
+    helpTo: "/help/connect-icloud",
   },
   {
     id: "ics",
-    label: "Calendar link (ICS)",
     // Not a company, so a generic link icon rather than a brand mark.
     icon: <Link2 className="h-4 w-4 text-violet-700" />,
     badgeClass: "bg-violet-100",
-    help: { to: "/help/connect-ics", label: "How to find your link" },
+    helpTo: "/help/connect-ics",
   },
   {
     id: "google",
-    label: "Google Calendar",
     icon: <SiGoogle className="h-4 w-4" style={{ color: "#4285F4" }} />,
     badgeClass: "bg-blue-100",
-    help: { to: "/help/connect-google", label: "How it works" },
+    helpTo: "/help/connect-google",
   },
   {
     id: "outlook",
-    label: "Outlook Calendar",
     // Simple Icons carries no Outlook-specific mark, so this is Microsoft's
     // own logo (the closest real brand mark available) rather than a letter.
     icon: <FaMicrosoft className="h-4 w-4" style={{ color: "#0078D4" }} />,
     badgeClass: "bg-sky-100",
-    help: { to: "/help/connect-outlook", label: "How it works" },
+    helpTo: "/help/connect-outlook",
   },
 ];
 
@@ -117,6 +113,7 @@ const AdminPanel = lazy(() => import("@/components/AdminPanel"));
  */
 export default function Profile() {
   const { user, signOut } = useAuth();
+  const t = useT();
   const navigate = useNavigate();
   const [passwordFormOpen, setPasswordFormOpen] = useState(false);
   const [passwordSubmitting, setPasswordSubmitting] = useState(false);
@@ -208,7 +205,7 @@ export default function Profile() {
           message:
             renameGroupMutation.error instanceof Error
               ? renameGroupMutation.error.message
-              : "Couldn't rename the group",
+              : t.profile.couldntRename,
         }
       : null;
 
@@ -238,7 +235,7 @@ export default function Profile() {
     inviteMutation.isError && inviteMutation.variables === inviteGroupId
       ? inviteMutation.error instanceof Error
         ? inviteMutation.error.message
-        : "Couldn't make an invite link"
+        : t.profile.couldntInvite
       : null;
 
   function shareInvite(groupId: string) {
@@ -256,7 +253,7 @@ export default function Profile() {
           message:
             leaveGroupMutation.error instanceof Error
               ? leaveGroupMutation.error.message
-              : "Couldn't leave the group",
+              : t.profile.couldntLeave,
         }
       : deleteGroupMutation.isError && deleteGroupMutation.variables
         ? {
@@ -264,7 +261,7 @@ export default function Profile() {
             message:
               deleteGroupMutation.error instanceof Error
                 ? deleteGroupMutation.error.message
-                : "Couldn't delete the group",
+                : t.profile.couldntDelete,
           }
         : null;
 
@@ -303,11 +300,11 @@ export default function Profile() {
       try {
         const { url } = await callFunction<{ url: string }>(`oauth-${provider}-start`, {
           body: {},
-          errorMessage: "Couldn't start connecting",
+          errorMessage: t.profile.couldntStartConnect,
         });
         window.location.assign(url);
       } catch (err) {
-        setConnectError(err instanceof Error ? err.message : "Couldn't start connecting");
+        setConnectError(err instanceof Error ? err.message : t.profile.couldntStartConnect);
       }
       return;
     }
@@ -333,20 +330,20 @@ export default function Profile() {
     try {
       const { results } = await callFunction<{ results: { ok: boolean }[] }>("calendar-sync", {
         body: {},
-        errorMessage: "Couldn't sync",
+        errorMessage: t.profile.couldntSync,
       });
       const failed = results.filter((r) => !r.ok).length;
       setSyncResult(
         results.length === 0
-          ? { ok: true, text: "Everything was synced within the last minute." }
+          ? { ok: true, text: t.profile.syncAllFresh }
           : failed === 0
-            ? { ok: true, text: `Synced ${plural(results.length, "account")}.` }
-            : { ok: false, text: `${failed} of ${plural(results.length, "account")} couldn't sync. See below.` },
+            ? { ok: true, text: t.profile.syncedAccounts(results.length) }
+            : { ok: false, text: t.profile.syncSomeFailed(failed, results.length) },
       );
       await refetchStatus();
       void queryClient.invalidateQueries({ queryKey: ["calendar-busy"] });
     } catch (err) {
-      setSyncResult({ ok: false, text: err instanceof Error ? err.message : "Couldn't sync" });
+      setSyncResult({ ok: false, text: err instanceof Error ? err.message : t.profile.couldntSync });
     } finally {
       setSyncing(false);
     }
@@ -358,7 +355,7 @@ export default function Profile() {
     const { error: err } = await supabase.auth.updateUser({ password });
     setPasswordSubmitting(false);
     if (err) {
-      setPasswordError(err.message);
+      setPasswordError(authErrorMessage(err, t));
     } else {
       setPasswordFormOpen(false);
       setPasswordSaved(true);
@@ -387,17 +384,15 @@ export default function Profile() {
         "calendar-add-ics",
         {
           body: { url, name },
-          errorMessage: "Couldn't add the link",
+          errorMessage: t.profile.couldntAddLink,
         },
       );
-      setIcsResult(
-        `Added "${body.label}" with ${body.busyBlocks} busy ${body.busyBlocks === 1 ? "block" : "blocks"}.`,
-      );
+      setIcsResult(t.profile.icsAdded(body.label, body.busyBlocks));
       setIcsFormOpen(false);
       setIcsAddedCount((n) => n + 1);
       await refetchStatus();
     } catch (err) {
-      setIcsError(err instanceof Error ? err.message : "Couldn't add the link");
+      setIcsError(err instanceof Error ? err.message : t.profile.couldntAddLink);
     } finally {
       setIcsSubmitting(false);
     }
@@ -409,7 +404,7 @@ export default function Profile() {
     try {
       await callFunction("calendar-disconnect", {
         body: { connectionId },
-        errorMessage: "Couldn't remove the account",
+        errorMessage: t.profile.couldntRemove,
       });
       setConfirmRemoveId(null);
       await refetchStatus();
@@ -417,7 +412,7 @@ export default function Profile() {
       // Leave the confirm panel open so the user can see why and retry.
       setRemoveError({
         id: connectionId,
-        message: err instanceof Error ? err.message : "Couldn't remove the account",
+        message: err instanceof Error ? err.message : t.profile.couldntRemove,
       });
     } finally {
       setRemovingId(null);
@@ -436,20 +431,16 @@ export default function Profile() {
         skippedEvents: number;
       }>("calendar-add-apple", {
         body: { username, password },
-        errorMessage: "Couldn't connect to iCloud",
+        errorMessage: t.profile.couldntIcloud,
       });
-      const skipped =
-        body.skippedEvents > 0
-          ? ` ${body.skippedEvents} ${body.skippedEvents === 1 ? "event" : "events"} couldn't be read and ${body.skippedEvents === 1 ? "was" : "were"} left out.`
-          : "";
       setAppleResult(
-        `Connected ${body.label}: ${body.calendars} ${body.calendars === 1 ? "calendar" : "calendars"}, ${body.busyBlocks} busy ${body.busyBlocks === 1 ? "block" : "blocks"}.${skipped}`,
+        t.profile.appleConnected(body.label, body.calendars, body.busyBlocks, body.skippedEvents),
       );
       setAppleFormOpen(false);
       setAppleAddedCount((n) => n + 1);
       await refetchStatus();
     } catch (err) {
-      setAppleError(err instanceof Error ? err.message : "Couldn't connect to iCloud");
+      setAppleError(err instanceof Error ? err.message : t.profile.couldntIcloud);
     } finally {
       setAppleSubmitting(false);
     }
@@ -472,11 +463,11 @@ export default function Profile() {
                 "flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold transition sm:text-sm",
                 adminMode
                   ? "border bg-background text-foreground hover:bg-secondary"
-                  : "bg-foreground text-background hover:opacity-90",
+                  : "bg-foreground uppercase text-background hover:opacity-90",
               )}
             >
               <ShieldCheck className="h-4 w-4" />
-              {adminMode ? "Exit admin mode" : "SWITCH TO ADMIN MODE"}
+              {adminMode ? t.profile.adminExit : t.profile.adminEnter}
             </button>
           </div>
         )}
@@ -494,15 +485,22 @@ export default function Profile() {
                 <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
                   <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
                   <span>
-                    Connected to{" "}
-                    {PROVIDERS.find((p) => p.id === connectedParam)?.label ?? "your calendar"}{" "}
-                    and pulled in your busy times.
+                    {t.profile.connected(
+                      connectedParam in t.providers
+                        ? t.providers[connectedParam as keyof typeof t.providers].label
+                        : t.profile.yourCalendar,
+                    )}
                   </span>
                 </div>
               ) : (
                 <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
                   <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span>Couldn't connect: {errorParam}</span>
+                  <span>
+                    {t.profile.couldntConnect(
+                      // "google:access_denied": the reason after the colon, in words.
+                      t.profile.oauthErrors[errorParam.split(":")[1] ?? ""] ?? errorParam,
+                    )}
+                  </span>
                 </div>
               )}
             </motion.div>
@@ -528,7 +526,7 @@ export default function Profile() {
                 setNameMutation.reset();
                 setEditingName(true);
               }}
-              title="Change your display name"
+              title={t.profile.changeName}
               className={cn(
                 "group relative flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-xl font-semibold",
                 avatarColor(0),
@@ -572,19 +570,19 @@ export default function Profile() {
                 <span className="text-sm font-bold text-foreground">
                   {groupsCount ?? "…"}
                 </span>
-                Groups
+                {t.profile.statGroups}
               </div>
               <div className="flex items-center justify-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-xs font-medium text-muted-foreground">
                 <span className="text-sm font-bold text-foreground">
                   {connectedCount ?? "…"}
                 </span>
-                Calendars
+                {t.profile.statCalendars}
               </div>
               <div className="flex items-center justify-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-xs font-medium text-muted-foreground">
                 <span className="text-sm font-bold text-foreground">
                   {busyCount ?? "…"}
                 </span>
-                Busy blocks
+                {t.profile.statBusy}
               </div>
             </div>
           </div>
@@ -595,7 +593,7 @@ export default function Profile() {
             fallback={
               <p className="mt-8 flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Opening admin mode…
+                {t.profile.adminOpening}
               </p>
             }
           >
@@ -651,7 +649,7 @@ export default function Profile() {
             {/* Connected calendars */}
             <section className="mt-8">
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <h2 className="text-lg font-semibold text-foreground">Connected calendars</h2>
+                <h2 className="text-lg font-semibold text-foreground">{t.profile.connectedCalendars}</h2>
                 {hasConnected && (
                   <button
                     type="button"
@@ -664,7 +662,7 @@ export default function Profile() {
                     ) : (
                       <RefreshCw className="h-4 w-4" />
                     )}
-                    {syncing ? "Syncing" : "Sync now"}
+                    {syncing ? t.profile.syncing : t.profile.syncNow}
                   </button>
                 )}
               </div>
@@ -685,12 +683,13 @@ export default function Profile() {
               )}
 
               <div className="mt-4 grid items-start gap-4 lg:grid-cols-2">
-                {PROVIDERS.map((provider) => {
+                {PROVIDERS.map(({ helpTo, ...provider }) => {
                   const attempts = attemptsFor(connections, provider.id);
+                  const words = t.providers[provider.id];
                   return (
                     <ProviderCard
                       key={provider.id}
-                      meta={provider}
+                      meta={{ ...provider, label: words.label, help: { to: helpTo, label: words.help } }}
                       accounts={attempts.filter((c) => c.status === "connected")}
                       latest={attempts[0]}
                       statusPending={statusPending}
@@ -763,20 +762,20 @@ export default function Profile() {
                 password and changing an existing one, since there is no
                 reliable way to tell from the client which case this is. */}
             <section className="mt-8">
-              <h2 className="text-lg font-semibold text-foreground">Password</h2>
+              <h2 className="text-lg font-semibold text-foreground">{t.profile.password}</h2>
               <div className="mt-4 rounded-2xl border bg-card p-5 shadow-sm sm:p-6">
                 {passwordSaved && !passwordFormOpen && (
                   <p className="mb-3 flex items-center gap-2 text-sm text-emerald-800">
                     <CheckCircle2 className="h-4 w-4 shrink-0" />
-                    Password saved. You can use it to sign in from now on.
+                    {t.profile.passwordSaved}
                   </p>
                 )}
                 {passwordFormOpen ? (
                   <PasswordForm
                     submitting={passwordSubmitting}
                     error={passwordError}
-                    submitLabel="Save password"
-                    submittingLabel="Saving"
+                    submitLabel={t.profile.savePassword}
+                    submittingLabel={t.profile.saving}
                     onSubmit={(password) => void handlePasswordSubmit(password)}
                     onCancel={() => {
                       setPasswordFormOpen(false);
@@ -793,7 +792,7 @@ export default function Profile() {
                     }}
                     className="flex items-center gap-2 rounded-full border bg-background px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-secondary"
                   >
-                    Set or change your password
+                    {t.profile.setPassword}
                   </button>
                 )}
               </div>
@@ -810,7 +809,7 @@ export default function Profile() {
           className="mt-8 flex w-full items-center justify-center gap-2 rounded-full border bg-background px-4 py-2.5 text-sm font-semibold text-foreground transition hover:bg-secondary sm:hidden"
         >
           <LogOut className="h-4 w-4" />
-          Sign out
+          {t.nav.signOut}
         </button>
       </main>
     </div>

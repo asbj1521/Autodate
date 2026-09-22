@@ -27,6 +27,7 @@ import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
 // behind it) is imported inside "syncConnection", so the everyday calls,
 // "status" above all, don't pay for loading it on a cold start.
 import type { SyncTarget } from "../_shared/sync.ts";
+import { withLanguage } from "../_shared/i18n.ts";
 
 type Db = ReturnType<typeof supabaseAdmin>;
 
@@ -171,7 +172,7 @@ async function overview(db: Db) {
   };
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withLanguage(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -313,4 +314,4 @@ Deno.serve(async (req) => {
     console.error(`admin ${action} failed`, err);
     return json({ error: "Something went wrong. Please try again." }, 500);
   }
-});
+}));

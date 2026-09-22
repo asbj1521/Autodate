@@ -4,6 +4,7 @@ import { CalendarCheck, Loader2, Users, XCircle } from "lucide-react";
 
 import { joinGroup, previewInvite, type Group } from "@/api/groups";
 import { useAuth } from "@/context/auth";
+import { useT } from "@/i18n/lang";
 import TopNav from "@/components/TopNav";
 
 /**
@@ -22,6 +23,7 @@ import TopNav from "@/components/TopNav";
 export default function JoinGroup() {
   const { token = "" } = useParams();
   const { user, loading } = useAuth();
+  const t = useT();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const preview = useQuery({
@@ -61,57 +63,48 @@ export default function JoinGroup() {
           {preview.isLoading || loading ? (
             <div className="flex items-center gap-3 text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin" />
-              Opening the invite…
+              {t.join.opening}
             </div>
           ) : preview.isError ? (
             <>
               <h1 className="flex items-center gap-2 text-lg font-bold text-foreground">
                 <XCircle className="h-5 w-5 text-red-600" />
-                This invite doesn't work
+                {t.join.broken}
               </h1>
               <p className="mt-2 text-sm text-muted-foreground">
-                {(preview.error as Error).message} Invite links last seven days, so ask
-                whoever sent it for a fresh one.
+                {t.join.brokenBody((preview.error as Error).message)}
               </p>
               <Link
                 to="/"
                 className="mt-5 inline-flex rounded-lg border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-secondary"
               >
-                Go to Casy
+                {t.join.goToCasy}
               </Link>
             </>
           ) : (
             <>
-              <h1 className="text-lg font-bold text-foreground">
-                You have been invited to
-              </h1>
+              <h1 className="text-lg font-bold text-foreground">{t.join.invitedTo}</h1>
               <p className="mt-1 text-2xl font-bold text-foreground">
                 {preview.data.group.name}
               </p>
               <p className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
                 <Users className="h-4 w-4" />
-                {preview.data.group.memberCount === 1
-                  ? "1 member so far"
-                  : `${preview.data.group.memberCount} members so far`}
+                {t.join.membersSoFar(preview.data.group.memberCount)}
               </p>
 
-              <p className="mt-5 text-sm text-muted-foreground">
-                Members can see each other's name and when they are busy, so Casy can find a
-                time that works for everyone. Nobody sees your email address, your calendars'
-                names, or what any of your events are called.
-              </p>
+              <p className="mt-5 text-sm text-muted-foreground">{t.join.privacy}</p>
 
               {alreadyIn ? (
                 <>
                   <p className="mt-5 text-sm font-medium text-foreground">
-                    You are already in this group.
+                    {t.join.alreadyIn}
                   </p>
                   <Link
                     to="/"
                     className="mt-3 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition hover:opacity-90"
                   >
                     <CalendarCheck className="h-4 w-4" />
-                    Find a date
+                    {t.join.findDate}
                   </Link>
                 </>
               ) : user ? (
@@ -122,7 +115,7 @@ export default function JoinGroup() {
                     className="mt-5 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:opacity-50"
                   >
                     {join.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                    Join group
+                    {t.join.joinGroup}
                   </button>
                   {join.isError && (
                     <p className="mt-3 text-sm text-red-700">
@@ -136,11 +129,9 @@ export default function JoinGroup() {
                     to={`/sign-in?next=${encodeURIComponent(here)}`}
                     className="mt-5 inline-flex rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition hover:opacity-90"
                   >
-                    Sign in to join
+                    {t.join.signInToJoin}
                   </Link>
-                  <p className="mt-3 text-xs text-muted-foreground">
-                    You will come straight back here afterwards.
-                  </p>
+                  <p className="mt-3 text-xs text-muted-foreground">{t.join.comeBack}</p>
                 </>
               )}
             </>

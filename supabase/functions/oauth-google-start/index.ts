@@ -18,6 +18,7 @@ import { callerId } from "../_shared/auth.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
 import { signState } from "../_shared/state.ts";
+import { langOf, withLanguage } from "../_shared/i18n.ts";
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const SCOPES = [
@@ -32,7 +33,7 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withLanguage(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -76,6 +77,7 @@ Deno.serve(async (req) => {
   // instead of Google silently reusing the one already signed in.
   authUrl.searchParams.set("prompt", "select_account consent");
   authUrl.searchParams.set("state", state);
+  authUrl.searchParams.set("hl", langOf(req)); // Google's consent screen in the site's language
 
   return json({ url: authUrl.toString() });
-});
+}));

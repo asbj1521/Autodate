@@ -17,16 +17,17 @@ import {
 import CalendarListPanel from "@/components/CalendarListPanel";
 import TopNav from "@/components/TopNav";
 import { useAuth } from "@/context/auth";
+import { currentMessages } from "@/i18n/current";
+import type { Messages } from "@/i18n/da";
+import { LOCALE, useLang, useT, type Lang } from "@/i18n/lang";
 import {
   buildMonthLayout,
   calendarColors,
-  CATEGORY_LABELS,
   dayKey,
   formatDuration,
   formatSegmentRange,
   HOLIDAY_CALENDAR,
   HOLIDAY_CALENDAR_ID,
-  HOLIDAY_CATEGORY_LABEL,
   holidaySegmentsByDay,
   segmentByDay,
   withHolidays,
@@ -38,22 +39,27 @@ import { callFunction } from "@/lib/supabaseFunctions";
 import { cn } from "@/lib/utils";
 import type { CalendarPurpose } from "@/types";
 
-const PROVIDER_LABELS: Record<OverviewCalendar["provider"], string> = {
-  builtin: "Built in",
-  google: "Google",
-  outlook: "Outlook",
-  apple: "Apple",
-  ics: "Calendar link",
-};
+/** A holiday's name in the page's language. */
+function holidayName(holiday: NonNullable<DaySegment["holiday"]>, lang: Lang): string {
+  return lang === "da" ? holiday.name : holiday.englishName;
+}
 
-/** "Tue Sep 22 2026, 2 busy blocks" plus any holiday names, for screen readers and tests. */
-function cellLabel(date: Date, segments: DaySegment[]): string {
+/** A calendar's name; the built-in holiday calendar is named in the page's language. */
+function calendarName(calendar: OverviewCalendar, t: Messages): string {
+  return calendar.id === HOLIDAY_CALENDAR_ID ? t.calendarView.holidayCalendar : calendar.name;
+}
+
+/** "Tue 22 Sept 2026, 2 busy blocks" plus any holiday names, for screen readers and tests. */
+function cellLabel(date: Date, segments: DaySegment[], t: Messages, lang: Lang): string {
   const busy = segments.filter((s) => !s.holiday).length;
-  const holidays = segments.flatMap((s) => (s.holiday ? [s.holiday.name] : []));
-  return (
-    `${date.toDateString()}, ${busy} busy ${busy === 1 ? "block" : "blocks"}` +
-    (holidays.length > 0 ? `, ${holidays.join(", ")}` : "")
-  );
+  const holidays = segments.flatMap((s) => (s.holiday ? [holidayName(s.holiday, lang)] : []));
+  const day = date.toLocaleDateString(LOCALE[lang], {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+  return t.calendarView.cellLabel(day, busy, holidays.join(", "));
 }
 
 /** Zinc, for a block whose calendar is somehow missing from the list. */
@@ -72,7 +78,7 @@ function fetchOverview(from: Date, to: Date): Promise<OverviewData> {
       from: from.toISOString(),
       to: to.toISOString(),
     },
-    errorMessage: "Couldn't load your calendars",
+    errorMessage: currentMessages().calendarView.couldntLoad,
   });
 }
 
@@ -90,6 +96,8 @@ function fetchOverview(from: Date, to: Date): Promise<OverviewData> {
 export default function CalendarOverview() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const t = useT();
+  const { lang } = useLang();
   const [month, setMonth] = useState(() => {
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
@@ -97,7 +105,10 @@ export default function CalendarOverview() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
 
-  const layout = useMemo(() => buildMonthLayout(month.year, month.month), [month]);
+  const layout = useMemo(
+    () => buildMonthLayout(month.year, month.month, LOCALE[lang]),
+    [month, lang],
+  );
   const gridDays = useMemo(() => layout.weeks.flat(), [layout]);
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
@@ -110,7 +121,7 @@ export default function CalendarOverview() {
     mutationFn: (v: { calendarId: string; purpose: CalendarPurpose | null }) =>
       callFunction("calendar-set-purpose", {
         body: v,
-        errorMessage: "Couldn't save the category",
+        errorMessage: t.calendarView.couldntSaveCategory,
       }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["calendar-busy"] });
@@ -198,20 +209,20 @@ export default function CalendarOverview() {
           className="inline-flex items-center gap-1 text-sm text-muted-foreground transition hover:text-foreground"
         >
           <ChevronLeft className="h-4 w-4" />
-          Back to profile
+          {t.calendarView.back}
         </Link>
 
         {error && (
           <div className="mt-6 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
             <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
             <span className="flex-1">
-              {error instanceof Error ? error.message : "Something went wrong."}
+              {error instanceof Error ? error.message : t.calendarView.somethingWrong}
             </span>
             <button
               onClick={() => void refetch()}
               className="font-medium underline underline-offset-2"
             >
-              Try again
+              {t.calendarView.tryAgain}
             </button>
           </div>
         )}
@@ -219,7 +230,7 @@ export default function CalendarOverview() {
         {data?.truncated && (
           <div className="mt-6 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
             <Info className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>This month has more busy blocks than can be shown, so some are missing.</span>
+            <span>{t.calendarView.truncated}</span>
           </div>
         )}
 
@@ -227,14 +238,14 @@ export default function CalendarOverview() {
           <div className="mt-6 flex items-start gap-2 rounded-lg border bg-secondary/40 p-3 text-sm text-muted-foreground">
             <Info className="mt-0.5 h-4 w-4 shrink-0" />
             <span>
-              No calendars connected yet.{" "}
-              <Link
-                to="/profile"
-                className="font-medium text-foreground underline underline-offset-2"
-              >
-                Connect one on your profile
-              </Link>{" "}
-              to see your own busy times here. Danish holidays are already shown.
+              {t.calendarView.noCalendars(
+                <Link
+                  to="/profile"
+                  className="font-medium text-foreground underline underline-offset-2"
+                >
+                  {t.calendarView.noCalendarsLink}
+                </Link>,
+              )}
             </span>
           </div>
         )}
@@ -254,18 +265,18 @@ export default function CalendarOverview() {
                 onClick={goToday}
                 className="rounded-full border bg-background px-3 py-1.5 text-sm font-medium text-foreground transition hover:bg-secondary"
               >
-                Today
+                {t.calendarView.today}
               </button>
               <button
                 onClick={() => shiftMonth(-1)}
-                aria-label="Previous month"
+                aria-label={t.common.previousMonth}
                 className="flex h-8 w-8 items-center justify-center rounded-full border bg-background text-muted-foreground transition hover:bg-secondary hover:text-foreground"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
               <button
                 onClick={() => shiftMonth(1)}
-                aria-label="Next month"
+                aria-label={t.common.nextMonth}
                 className="flex h-8 w-8 items-center justify-center rounded-full border bg-background text-muted-foreground transition hover:bg-secondary hover:text-foreground"
               >
                 <ChevronRight className="h-4 w-4" />
@@ -277,9 +288,9 @@ export default function CalendarOverview() {
             <div className={cn(GRID_COLUMNS, "border-b bg-secondary/40")}>
               <div
                 className="hidden px-1 py-2 text-center text-xs font-medium text-muted-foreground sm:block"
-                title="Week number"
+                title={t.calendarView.weekNumber}
               >
-                uge
+                {t.calendarView.weekHeader}
               </div>
               {layout.weekdayLabels.map((label) => (
                 <div
@@ -302,7 +313,7 @@ export default function CalendarOverview() {
                 // The 1st of a month is labelled with its abbreviation, e.g. "1. okt.".
                 const numberLabel =
                   cell.dayOfMonth === 1
-                    ? `1. ${cell.date.toLocaleString("da-DK", { month: "short" })}`
+                    ? cell.date.toLocaleDateString(LOCALE[lang], { day: "numeric", month: "short" })
                     : cell.dayOfMonth;
 
                 // Each row starts with its ISO week number, on the left of Monday.
@@ -313,7 +324,7 @@ export default function CalendarOverview() {
                   <Fragment key={cell.key}>
                     {index % 7 === 0 && (
                       <div
-                        title={`Week ${layout.weekNumbers[rowIndex]}`}
+                        title={t.calendarView.week(layout.weekNumbers[rowIndex])}
                         className={cn(
                           "hidden items-start justify-center border-b border-r bg-secondary/40 pt-2.5 text-xs text-muted-foreground sm:flex",
                           isCurrentWeek && "font-semibold text-foreground",
@@ -325,7 +336,7 @@ export default function CalendarOverview() {
                     <button
                       type="button"
                       onClick={() => setSelectedKey(cell.key)}
-                      aria-label={cellLabel(cell.date, segments)}
+                      aria-label={cellLabel(cell.date, segments, t, lang)}
                       aria-pressed={isSelected}
                       className={cn(
                         "relative flex min-h-[60px] flex-col border-b border-r p-1 text-left transition hover:bg-secondary/40 sm:min-h-[104px] sm:p-1.5",
@@ -378,11 +389,13 @@ export default function CalendarOverview() {
                               />
                               <span className="truncate text-foreground/80">
                                 {seg.holiday ? (
-                                  <span className="font-medium">{seg.holiday.name}</span>
+                                  <span className="font-medium">{holidayName(seg.holiday, lang)}</span>
                                 ) : (
                                   <>
-                                    <span className="font-medium">{formatSegmentRange(seg)}</span>{" "}
-                                    {cal?.name}
+                                    <span className="font-medium">
+                                      {formatSegmentRange(seg, t.calendarView.allDay)}
+                                    </span>{" "}
+                                    {cal && calendarName(cal, t)}
                                   </>
                                 )}
                               </span>
@@ -391,7 +404,7 @@ export default function CalendarOverview() {
                         })}
                         {extra > 0 && (
                           <span className="px-1 text-[10px] text-muted-foreground">
-                            +{extra} more
+                            {t.calendarView.more(extra)}
                           </span>
                         )}
                       </div>
@@ -409,7 +422,7 @@ export default function CalendarOverview() {
 
           <section className="mt-4 min-w-0 rounded-2xl border bg-card p-4 shadow-sm sm:mt-6 sm:p-5 lg:col-start-1 lg:row-start-3">
             <h3 className="font-semibold text-foreground">
-              {selectedDay?.date.toLocaleDateString("en-GB", {
+              {selectedDay?.date.toLocaleDateString(LOCALE[lang], {
                 weekday: "long",
                 day: "numeric",
                 month: "long",
@@ -418,7 +431,7 @@ export default function CalendarOverview() {
             </h3>
             {selectedSegments.length === 0 ? (
               <p className="mt-2 text-sm text-muted-foreground">
-                Nothing busy on this day in the calendars shown.
+                {t.calendarView.nothingBusy}
               </p>
             ) : (
               <ul className="mt-3 divide-y">
@@ -445,7 +458,7 @@ export default function CalendarOverview() {
                 setPurpose.isError
                   ? setPurpose.error instanceof Error
                     ? setPurpose.error.message
-                    : "Couldn't save."
+                    : t.calendarView.couldntSave
                   : null
               }
               onSetVisible={setCalendarsVisible}
@@ -472,24 +485,33 @@ function DayRow({
   calendar: OverviewCalendar | undefined;
   rgb: string;
 }) {
+  const t = useT();
+  const { lang } = useLang();
   const holiday = seg.holiday;
+  const words = t.calendarView;
 
-  const title = holiday ? holiday.name : formatSegmentRange(seg);
+  // A holiday shows its name in the page's language, with the other
+  // language's name beside it.
+  const title = holiday ? holidayName(holiday, lang) : formatSegmentRange(seg, words.allDay);
   const aside = holiday
-    ? holiday.englishName
+    ? holidayName(holiday, lang === "da" ? "en" : "da")
     : seg.allDay
       ? ""
-      : formatDuration(seg.start, seg.end);
+      : formatDuration(seg.start, seg.end, words.hourUnit);
   const source = holiday
-    ? `${holiday.kind === "public" ? "Public holiday" : "Commonly observed day off"} · Denmark`
-    : [calendar?.name ?? "Calendar", calendar?.account, calendar && PROVIDER_LABELS[calendar.provider]]
+    ? `${holiday.kind === "public" ? words.publicHoliday : words.observedDay} · ${words.denmark}`
+    : [
+        calendar ? calendarName(calendar, t) : words.calendarFallback,
+        calendar?.account,
+        calendar && words.providerNames[calendar.provider],
+      ]
         .filter(Boolean)
         .join(" · ");
   const pill = holiday
-    ? HOLIDAY_CATEGORY_LABEL
+    ? words.holidayCategory
     : calendar?.purpose
-      ? CATEGORY_LABELS[calendar.purpose]
-      : "No category";
+      ? t.categories[calendar.purpose]
+      : words.noCategory;
 
   return (
     <li className="flex items-start gap-3 py-3 text-sm">
@@ -506,10 +528,10 @@ function DayRow({
         {!holiday && (seg.continuesBefore || seg.continuesAfter) && (
           <p className="text-xs text-muted-foreground">
             {seg.continuesBefore && seg.continuesAfter
-              ? "Continues from the previous day and into the next"
+              ? words.continuesBoth
               : seg.continuesBefore
-                ? "Continues from the previous day"
-                : "Continues into the next day"}
+                ? words.continuesBefore
+                : words.continuesAfter}
           </p>
         )}
       </div>

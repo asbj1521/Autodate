@@ -22,6 +22,7 @@ import { pruneSupersededConnections } from "../_shared/connections.ts";
 import { encryptionKeyFromEnv, encryptSecret } from "../_shared/secretBox.ts";
 import { storeCalendars } from "../_shared/storeCalendars.ts";
 import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
+import { withLanguage } from "../_shared/i18n.ts";
 
 // How far ahead to sync. Same window as the other providers.
 const SYNC_MONTHS_AHEAD = 12;
@@ -37,7 +38,7 @@ function json(body: unknown, status = 200): Response {
 /** True for strings with no control characters (newlines, tabs, NUL, DEL, ...). */
 const isPlainText = (text: string) => Array.from(text).every((ch) => ch.charCodeAt(0) > 31 && ch.charCodeAt(0) !== 127);
 
-Deno.serve(async (req) => {
+Deno.serve(withLanguage(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -132,4 +133,4 @@ Deno.serve(async (req) => {
     busyBlocks: fetched.reduce((sum, c) => sum + c.intervals.length, 0),
     skippedEvents,
   });
-});
+}));

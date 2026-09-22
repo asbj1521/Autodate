@@ -4,8 +4,8 @@ import { Check, Copy, Link2, Loader2, LogOut, Pencil, Trash2, Users } from "luci
 import type { Group } from "@/api/groups";
 import InfoTip from "@/components/InfoTip";
 import InlineTextEdit from "@/components/InlineTextEdit";
-import { plural } from "@/lib/accountSummary";
 import { avatarColor } from "@/lib/avatar";
+import { useLang, useT } from "@/i18n/lang";
 import { formatMonthYear } from "@/lib/format";
 import { inviteExpiryLabel, MAX_GROUP_NAME_LENGTH } from "@/lib/groups";
 import { cn } from "@/lib/utils";
@@ -68,6 +68,8 @@ function GroupRow({
   onShareInvite: () => void;
   onCloseInvite: () => void;
 }) {
+  const { lang } = useLang();
+  const t = useT();
   const isCreator = group.createdBy === youId;
   // Leaving a group you're the only member of already deletes it (see
   // useSchedulingGroups / leave_friend_group), so a separate delete button
@@ -128,7 +130,7 @@ function GroupRow({
               <button
                 type="button"
                 onClick={onStartRename}
-                title="Rename this group"
+                title={t.groupsSection.renameTitle}
                 className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-secondary hover:text-foreground"
               >
                 <Pencil className="h-3 w-3" />
@@ -136,7 +138,8 @@ function GroupRow({
             </p>
           )}
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {plural(group.members.length, "member")} · made {formatMonthYear(group.createdAt)}
+            {t.counts.members(group.members.length)} ·{" "}
+            {t.groupsSection.made(formatMonthYear(group.createdAt, lang))}
           </p>
         </div>
 
@@ -144,16 +147,16 @@ function GroupRow({
           <button
             type="button"
             onClick={onShareInvite}
-            title="Get an invite link for this group"
+            title={t.groupsSection.inviteTitle}
             className="flex items-center gap-1.5 rounded-full border bg-background px-3.5 py-1.5 text-sm font-semibold text-foreground transition hover:bg-secondary"
           >
             <Link2 className="h-4 w-4" />
-            Invite link
+            {t.groupsSection.inviteLink}
           </button>
           <button
             type="button"
             onClick={onAskLeave}
-            title="Leave this group"
+            title={t.groupsSection.leaveTitle}
             className="flex h-8 w-8 items-center justify-center rounded-full border bg-background text-muted-foreground transition hover:bg-secondary hover:text-foreground"
           >
             <LogOut className="h-3.5 w-3.5" />
@@ -162,7 +165,7 @@ function GroupRow({
             <button
               type="button"
               onClick={onAskDelete}
-              title="Delete this group for everyone"
+              title={t.groupsSection.deleteTitle}
               className="flex h-8 w-8 items-center justify-center rounded-full border bg-background text-muted-foreground transition hover:bg-red-50 hover:text-red-700"
             >
               <Trash2 className="h-3.5 w-3.5" />
@@ -193,30 +196,33 @@ function GroupRow({
                   )}
                 >
                   {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                  {copied ? "Copied" : "Copy"}
+                  {copied ? t.common.copied : t.common.copy}
                 </button>
               </div>
               <div className="mt-2 flex items-center justify-between gap-3">
                 <p className="text-xs text-muted-foreground">
-                  Anyone with this link can join. It works for{" "}
-                  {inviteExpiresAt ? inviteExpiryLabel(inviteExpiresAt) : "7 days"}.
+                  {t.groupsSection.inviteShort(
+                    inviteExpiresAt
+                      ? inviteExpiryLabel(inviteExpiresAt, t.inviteExpiry)
+                      : t.inviteExpiry.days(7),
+                  )}
                 </p>
                 <button
                   type="button"
                   onClick={onCloseInvite}
                   className="shrink-0 text-xs font-medium text-muted-foreground transition hover:text-foreground"
                 >
-                  Done
+                  {t.groupsSection.done}
                 </button>
               </div>
             </>
           ) : invitePending ? (
             <p className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Making a link…
+              {t.groupsSection.makingLink}
             </p>
           ) : (
-            <p className="text-sm text-red-700">{inviteError ?? "Couldn't make an invite link."}</p>
+            <p className="text-sm text-red-700">{inviteError ?? t.groupsSection.linkFailed}</p>
           )}
         </div>
       )}
@@ -225,10 +231,10 @@ function GroupRow({
         <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
           <p>
             {confirm.action === "delete"
-              ? `Delete "${group.name}" for everyone? All ${plural(group.members.length, "member")} lose access right away.`
+              ? t.groupsSection.deleteConfirm(group.name, group.members.length)
               : soleMember
-                ? `Leave "${group.name}"? You're the only member, so this deletes it for good.`
-                : `Leave "${group.name}"? You'll need a new invite link to get back in.`}
+                ? t.groupsSection.leaveSole(group.name)
+                : t.groupPanel.leaveConfirm(group.name)}
           </p>
           {error && <p className="mt-2 font-medium">{error}</p>}
           <div className="mt-2 flex items-center gap-3">
@@ -239,7 +245,9 @@ function GroupRow({
               className="flex items-center gap-1.5 rounded-full bg-red-600 px-4 py-1.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-60"
             >
               {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {confirm.action === "delete" || soleMember ? "Delete group" : "Leave group"}
+              {confirm.action === "delete" || soleMember
+                ? t.groupPanel.deleteGroup
+                : t.groupPanel.leaveGroup}
             </button>
             <button
               type="button"
@@ -247,7 +255,7 @@ function GroupRow({
               disabled={busy}
               className="text-sm text-red-900/80 transition hover:text-red-900"
             >
-              Cancel
+              {t.common.cancel}
             </button>
           </div>
         </div>
@@ -320,15 +328,13 @@ export default function GroupsSection({
   onShareInvite: (groupId: string) => void;
   onCloseInvite: () => void;
 }) {
+  const t = useT();
   return (
     <section className="mt-8">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="flex items-center gap-1.5 text-lg font-semibold text-foreground">
-          Your groups
-          <InfoTip label="What members can see">
-            Everyone in a group can see each other's name and when they are busy. Nobody sees
-            your email address, your calendars' names, or what any of your events are called.
-          </InfoTip>
+          {t.groupsSection.title}
+          <InfoTip label={t.groupPanel.whatMembersSee}>{t.groupPanel.whatMembersSeeBody}</InfoTip>
         </h2>
         <button
           type="button"
@@ -336,28 +342,28 @@ export default function GroupsSection({
           className="flex shrink-0 items-center gap-2 rounded-full border bg-background px-3.5 py-1.5 text-sm font-semibold text-foreground transition hover:bg-secondary"
         >
           <Users className="h-4 w-4" />
-          Make a group
+          {t.groupsSection.makeGroup}
         </button>
       </div>
 
       {isPending ? (
         <p className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Loading your groups…
+          {t.groupsSection.loading}
         </p>
       ) : isError ? (
-        <p className="mt-4 text-sm text-red-700">Couldn't load your groups.</p>
+        <p className="mt-4 text-sm text-red-700">{t.groupsSection.loadFailed}</p>
       ) : !groups || groups.length === 0 ? (
         <p className="mt-4 rounded-lg bg-secondary p-3 text-sm text-muted-foreground">
-          You're not in a group yet.{" "}
-          <button
-            type="button"
-            onClick={onCreateGroup}
-            className="font-medium text-foreground underline underline-offset-2"
-          >
-            Make one
-          </button>{" "}
-          and invite people in.
+          {t.groupsSection.empty(
+            <button
+              type="button"
+              onClick={onCreateGroup}
+              className="font-medium text-foreground underline underline-offset-2"
+            >
+              {t.groupsSection.makeOne}
+            </button>,
+          )}
         </p>
       ) : (
         <ul className="mt-4 divide-y border-t">

@@ -6,14 +6,3 @@
 
 /** All days of the week in Monday-first display order. */
 export const ALL_DOWS = [1, 2, 3, 4, 5, 6, 0];
-
-/** Short English labels indexed by day-of-week. */
-export const DOW_SHORT: Record<number, string> = {
-  0: "Sun",
-  1: "Mon",
-  2: "Tue",
-  3: "Wed",
-  4: "Thu",
-  5: "Fri",
-  6: "Sat",
-};
