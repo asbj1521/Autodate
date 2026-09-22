@@ -74,7 +74,7 @@ supabase/
 - `src/lib/heatmap.ts`: the month grid tinted by how many people are free.
 - `src/lib/realCalendar.ts`: maps the user's stored blocks into the engine's shape (calendar purpose work/school -> category) and swaps them into an example group's "you" slot.
 - `src/hooks/useSchedulingGroups.ts`: which groups the scheduling page searches. Real groups carry every member's busy time; a member with no calendar is left out of the search and named in `waitingFor` rather than counted as free. With no real groups, the labelled examples cycle instead. Only the group on screen is fetched.
-- `src/lib/queryPersistence.ts`: remembers only the `groups`, `calendar-status` and `admin-status` queries in localStorage (keys include the user id, wiped on sign-out, dropped after 7 days), so reloads show them at once and refresh in the background. Only ever add queries about the signed-in user themself: never other people's busy times or the admin overview.
+- `src/lib/queryPersistence.ts`: remembers only the `groups`, `calendar-status`, `admin-status` and `whoami` queries in localStorage (keys include the user id, wiped on sign-out, dropped after 7 days), so reloads show them at once and refresh in the background. Only ever add queries about the signed-in user themself: never other people's busy times or the admin overview.
 - `src/lib/adminOverview.ts`: patches the admin overview after an action so the row disappears at once, while the real overview refetches in the background.
 - `src/lib/supabaseFunctions.ts`: `callFunction()`, the only way the frontend calls Edge Functions. It attaches the session's access token.
 - `src/lib/supabase.ts`: the Supabase client, used for auth only (tables are not read from the browser).

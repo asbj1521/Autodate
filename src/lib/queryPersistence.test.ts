@@ -29,12 +29,14 @@ describe("queryPersistence", () => {
     const stop = persistQueries(first);
     first.setQueryData(["groups", "u1"], [{ id: "g1" }]);
     first.setQueryData(["admin-status", "u1"], true);
+    first.setQueryData(["whoami", "u1"], { name: "Asbjørn Morris Bay" });
     stop();
 
     const next = new QueryClient();
     persistQueries(next);
     expect(next.getQueryData(["groups", "u1"])).toEqual([{ id: "g1" }]);
     expect(next.getQueryData(["admin-status", "u1"])).toBe(true);
+    expect(next.getQueryData(["whoami", "u1"])).toEqual({ name: "Asbjørn Morris Bay" });
   });
 
   it("never writes other people's busy times or the admin overview to the device", () => {

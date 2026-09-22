@@ -5,8 +5,9 @@
  *
  * Only the queries named in PERSISTED are kept, and on purpose they are all
  * about the signed-in person themself: their groups (names and members),
- * their calendar status, and whether they are an admin. Other people's busy
- * times and the admin overview are never written to the device.
+ * their calendar status, whether they are an admin, and their own resolved
+ * display name. Other people's busy times and the admin overview are never
+ * written to the device.
  *
  * Every key those queries use includes the user's id, so one person's cache
  * is never served to another; everything is wiped on sign-out anyway (see
@@ -16,7 +17,7 @@
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 
 /** The first element of the query keys worth remembering. */
-const PERSISTED = new Set(["groups", "calendar-status", "admin-status"]);
+const PERSISTED = new Set(["groups", "calendar-status", "admin-status", "whoami"]);
 
 const STORAGE_PREFIX = "casy:query:";
 /** Anything older than this is dropped rather than shown. */
