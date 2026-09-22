@@ -157,7 +157,7 @@ export default function Privacy() {
             Removing a calendar account on your profile deletes its busy times and credentials from
             Casy immediately. To stop the provider&apos;s side as well, remove Casy&apos;s access in
             your Google or Microsoft account settings, or delete the app-specific password at
-            account.apple.com.
+            account.apple.com/account/manage.
           </p>
           <p>
             Leaving a group removes you from it straight away, and the other members stop seeing

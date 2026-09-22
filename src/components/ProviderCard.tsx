@@ -1,9 +1,11 @@
 import { useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import {
   AlertTriangle,
   CalendarPlus,
   CheckCircle2,
   ChevronDown,
+  HelpCircle,
   Loader2,
   RefreshCw,
   Trash2,
@@ -22,8 +24,10 @@ export interface ProviderMeta {
   /** The brand's own mark, not a generic icon: a real logo, not an initial. */
   icon: ReactNode;
   badgeClass: string;
-  /** Shown behind the (i), not on the card. */
-  description: string;
+  /** Shown behind the (i), not on the card. Omit when `help` is set. */
+  description?: string;
+  /** A route to a longer guide, shown as a button beside the label instead of the (i). */
+  help?: { to: string; label: string };
 }
 
 /** What "remove" explains, since each provider revokes access somewhere different. */
@@ -264,7 +268,19 @@ export default function ProviderCard({
             {meta.icon}
           </span>
           <h3 className="truncate font-semibold text-foreground">{meta.label}</h3>
-          <InfoTip label={`About ${meta.label}`}>{meta.description}</InfoTip>
+          {meta.help ? (
+            <Link
+              to={meta.help.to}
+              className="flex shrink-0 items-center gap-1.5 rounded-full border bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+            >
+              <HelpCircle className="h-3.5 w-3.5" />
+              {meta.help.label}
+            </Link>
+          ) : (
+            meta.description && (
+              <InfoTip label={`About ${meta.label}`}>{meta.description}</InfoTip>
+            )
+          )}
         </div>
 
         {statusPending ? (

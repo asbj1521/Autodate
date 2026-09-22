@@ -73,8 +73,7 @@ const PROVIDERS: ProviderMeta[] = [
     label: "Apple iCloud Calendar",
     icon: <SiApple className="h-4 w-4 text-neutral-800" />,
     badgeClass: "bg-neutral-200",
-    description:
-      "Apple has no one-click sign-in for calendars. Generate an app-specific password for Casy at account.apple.com, then enter your Apple ID email and that password.",
+    help: { to: "/help/connect-icloud", label: "How to connect iCloud" },
   },
   {
     id: "ics",
@@ -82,16 +81,14 @@ const PROVIDERS: ProviderMeta[] = [
     // Not a company, so a generic link icon rather than a brand mark.
     icon: <Link2 className="h-4 w-4 text-violet-700" />,
     badgeClass: "bg-violet-100",
-    description:
-      "Paste a calendar feed link, for example your school timetable or an Outlook publish link. Only start and end times are kept; titles, places and attendees are removed before anything is stored. These show as Special on the calendar overview.",
+    help: { to: "/help/connect-ics", label: "How to find your link" },
   },
   {
     id: "google",
     label: "Google Calendar",
     icon: <SiGoogle className="h-4 w-4" style={{ color: "#4285F4" }} />,
     badgeClass: "bg-blue-100",
-    description:
-      "Connect with one click. Casy only ever reads free and busy times, never event details.",
+    help: { to: "/help/connect-google", label: "How it works" },
   },
   {
     id: "outlook",
@@ -100,8 +97,7 @@ const PROVIDERS: ProviderMeta[] = [
     // own logo (the closest real brand mark available) rather than a letter.
     icon: <FaMicrosoft className="h-4 w-4" style={{ color: "#0078D4" }} />,
     badgeClass: "bg-sky-100",
-    description:
-      "Connect with one click via your Microsoft account. Casy only ever reads free and busy times, never event details.",
+    help: { to: "/help/connect-outlook", label: "How it works" },
   },
 ];
 

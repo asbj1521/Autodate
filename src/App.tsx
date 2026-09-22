@@ -21,6 +21,10 @@ const SignIn = lazy(() => import('@/pages/SignIn'))
 const Privacy = lazy(() => import('@/pages/Privacy'))
 const HowItWorks = lazy(() => import('@/pages/HowItWorks'))
 const MyEvents = lazy(() => import('@/pages/MyEvents'))
+const ConnectIcloudHelp = lazy(() => import('@/pages/ConnectIcloudHelp'))
+const ConnectIcsHelp = lazy(() => import('@/pages/ConnectIcsHelp'))
+const ConnectGoogleHelp = lazy(() => import('@/pages/ConnectGoogleHelp'))
+const ConnectOutlookHelp = lazy(() => import('@/pages/ConnectOutlookHelp'))
 // An invite link is often the very first page someone sees, so it stays out of
 // the entry chunk like the other pages reached by a deliberate click.
 const JoinGroup = lazy(() => import('@/pages/JoinGroup'))
@@ -43,6 +47,10 @@ function App() {
               <Route path="/sign-in" element={<SignIn />} />
               <Route path="/privacy" element={<Privacy />} />
               <Route path="/how-it-works" element={<HowItWorks />} />
+              <Route path="/help/connect-icloud" element={<ConnectIcloudHelp />} />
+              <Route path="/help/connect-ics" element={<ConnectIcsHelp />} />
+              <Route path="/help/connect-google" element={<ConnectGoogleHelp />} />
+              <Route path="/help/connect-outlook" element={<ConnectOutlookHelp />} />
               {/* The invite link. Signing in happens on the page itself, so
                   someone can see what they were invited to before deciding. */}
               <Route path="/join/:token" element={<JoinGroup />} />

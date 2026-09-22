@@ -85,17 +85,6 @@ export default function AppleCredentialsForm({
                 placeholder="xxxx-xxxx-xxxx-xxxx"
                 className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
               />
-              <span className="mt-1 block text-xs text-muted-foreground">
-                Generate one at{" "}
-                <a
-                  href="https://account.apple.com"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="underline underline-offset-2 hover:text-foreground"
-                >
-                  account.apple.com
-                </a>
-              </span>
             </div>
             {error && (
               <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
