@@ -25,7 +25,7 @@ Casy Users sign in, link their calendars (Google, Outlook, Apple iCloud, or any 
 ## Tech Stack
 
 - **Frontend:** React 19 + TypeScript + Vite, React Router v7
-- **UI:** Tailwind CSS with hand-built components (`src/components/`); only `@radix-ui/react-tooltip` from Radix; icons from lucide-react
+- **UI:** Tailwind CSS with hand-built components (`src/components/`); only `@radix-ui/react-tooltip` from Radix; icons from lucide-react, except the real Google/Microsoft/Apple brand marks on the profile page's provider cards, which come from `react-icons` (`si`/`fa6`)
 - **Animations:** Framer Motion
 - **State:** component state plus TanStack Query for server data, with a few of the user's own answers remembered across reloads (`src/lib/queryPersistence.ts`); one React context, for auth (`src/context/`)
 - **Hosting:** Vercel (project `casy`), auto-deploys `main`; `vercel.json` rewrites every path to `index.html` for the SPA

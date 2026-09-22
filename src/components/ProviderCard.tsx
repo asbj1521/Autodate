@@ -19,7 +19,8 @@ import type { CalendarProvider } from "@/types";
 export interface ProviderMeta {
   id: CalendarProvider;
   label: string;
-  initial: string;
+  /** The brand's own mark, not a generic icon: a real logo, not an initial. */
+  icon: ReactNode;
   badgeClass: string;
   /** Shown behind the (i), not on the card. */
   description: string;
@@ -256,11 +257,11 @@ export default function ProviderCard({
         <div className="flex min-w-0 items-center gap-3">
           <span
             className={cn(
-              "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold",
+              "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
               meta.badgeClass,
             )}
           >
-            {meta.initial}
+            {meta.icon}
           </span>
           <h3 className="truncate font-semibold text-foreground">{meta.label}</h3>
           <InfoTip label={`About ${meta.label}`}>{meta.description}</InfoTip>

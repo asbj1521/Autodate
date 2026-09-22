@@ -96,6 +96,44 @@ export async function createGroup(name: string): Promise<{ groups: Group[]; crea
   });
 }
 
+/** The cache key for the signed-in person's resolved display name. */
+export function whoAmIQueryKey(userId: string) {
+  return ["whoami", userId] as const;
+}
+
+/**
+ * What to call the signed-in person: their chosen name if they set one on
+ * the profile page, otherwise the name their login hands over (a Google name,
+ * or the part of an email before the @).
+ */
+export function whoAmIQuery(userId: string) {
+  return queryOptions({
+    queryKey: whoAmIQueryKey(userId),
+    queryFn: async (): Promise<{ name: string }> =>
+      await callFunction<{ name: string }>("groups", {
+        body: { action: "whoami" },
+        errorMessage: "Couldn't load your profile",
+      }),
+    staleTime: 60_000,
+  });
+}
+
+/** Set a custom display name, shown to group members instead of the login-derived one. */
+export async function setDisplayName(name: string): Promise<{ name: string }> {
+  return await callFunction("groups", {
+    body: { action: "set-name", name },
+    errorMessage: "Couldn't update your name",
+  });
+}
+
+/** Rename a group. Any member can do this, not just whoever created it. */
+export async function renameGroup(groupId: string, name: string): Promise<{ groups: Group[] }> {
+  return await callFunction("groups", {
+    body: { action: "rename", groupId, name },
+    errorMessage: "Couldn't rename the group",
+  });
+}
+
 /** A fresh invite link. Earlier links for the group keep working until they expire. */
 export async function createInvite(groupId: string): Promise<{ url: string; expiresAt: string }> {
   return await callFunction("groups", {

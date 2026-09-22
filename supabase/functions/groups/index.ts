@@ -24,6 +24,7 @@ import { callerUser } from "../_shared/auth.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { allowedFrontends, pickFrontend } from "../_shared/frontend.ts";
 import {
+  cleanDisplayName,
   cleanGroupName,
   displayNameFor,
   INVITE_LIFETIME_MS,
@@ -59,17 +60,18 @@ function json(body: unknown, status = 200): Response {
  * group queries can't join to, so each person's name is copied into `profiles`
  * whenever they use the app. Failing to write it is not worth failing the
  * request over; the worst case is a slightly stale name.
+ *
+ * Goes through the remember_login_name function rather than a plain upsert
+ * because it has to back off once someone has chosen their own name: a plain
+ * upsert would stomp a custom name right back to the login-derived one on the
+ * very next call.
  */
 async function rememberName(db: Db, user: NameableUser & { id: string }): Promise<void> {
-  const { error } = await db.from("profiles").upsert(
-    {
-      id: user.id,
-      display_name: displayNameFor(user),
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "id" },
-  );
-  if (error) console.error("profiles upsert failed", error);
+  const { error } = await db.rpc("remember_login_name", {
+    p_id: user.id,
+    p_display_name: displayNameFor(user),
+  });
+  if (error) console.error("remember_login_name failed", error);
 }
 
 /**
@@ -104,20 +106,35 @@ async function listGroups(db: Db, profileId: string, callerName: string) {
     .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
   if (groups.length === 0) return [];
 
+  // The caller's own id is included here too, not just other members': if
+  // they have chosen a custom name, that is what they should see themself
+  // called, the same as everyone else does.
   const memberIds = [
     ...new Set(groups.flatMap((g) => g.group_members.map((m) => m.profile_id))),
-  ].filter((id) => id !== profileId);
+  ];
   const nameById = new Map<string, string | null>();
+  const customById = new Map<string, boolean>();
   if (memberIds.length > 0) {
     const { data: names, error: namesErr } = await db
       .from("profiles")
-      .select("id, display_name")
+      .select("id, display_name, name_is_custom")
       .in("id", memberIds);
     if (namesErr) throw namesErr;
-    for (const p of (names ?? []) as { id: string; display_name: string | null }[]) {
+    for (const p of (names ?? []) as {
+      id: string;
+      display_name: string | null;
+      name_is_custom: boolean;
+    }[]) {
       nameById.set(p.id, p.display_name);
+      customById.set(p.id, p.name_is_custom);
     }
   }
+
+  // The caller's own login-derived name (callerName) is fresher than
+  // whatever rememberName last saved, so it wins unless a custom name is on
+  // file — that one only a deliberate "set-name" call can produce.
+  const ownName =
+    customById.get(profileId) && nameById.get(profileId) ? nameById.get(profileId)! : callerName;
 
   return groups.map((g) => ({
     id: g.id,
@@ -131,11 +148,22 @@ async function listGroups(db: Db, profileId: string, callerName: string) {
       .sort((a, b) => Date.parse(a.joined_at) - Date.parse(b.joined_at))
       .map((m) => ({
         profileId: m.profile_id,
-        name: m.profile_id === profileId ? callerName : (nameById.get(m.profile_id) ?? "Someone"),
+        name: m.profile_id === profileId ? ownName : (nameById.get(m.profile_id) ?? "Someone"),
         isYou: m.profile_id === profileId,
         joinedAt: m.joined_at,
       })),
   }));
+}
+
+/** What this person is called: their chosen name if they set one, else their login-derived name. */
+async function resolveOwnName(db: Db, profileId: string, callerName: string): Promise<string> {
+  const { data, error } = await db
+    .from("profiles")
+    .select("display_name, name_is_custom")
+    .eq("id", profileId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.name_is_custom && data.display_name ? data.display_name : callerName;
 }
 
 /** True if this person is in this group. Checked before every group action. */
@@ -309,6 +337,22 @@ Deno.serve(async (req) => {
         return json({ groups: await listGroups(db, profileId, callerName) });
       }
 
+      case "whoami": {
+        return json({ name: await resolveOwnName(db, profileId, callerName) });
+      }
+
+      case "set-name": {
+        const name = cleanDisplayName(payload.name);
+        if (!name) return json({ error: "Give yourself a name." }, 400);
+
+        const { error: nameErr } = await db.from("profiles").upsert(
+          { id: profileId, display_name: name, name_is_custom: true, updated_at: new Date().toISOString() },
+          { onConflict: "id" },
+        );
+        if (nameErr) throw nameErr;
+        return json({ name });
+      }
+
       case "create": {
         const name = cleanGroupName(payload.name);
         if (!name) return json({ error: "Give the group a name." }, 400);
@@ -331,6 +375,26 @@ Deno.serve(async (req) => {
           return json({ error: memberErr.message }, 400);
         }
         return json({ groups: await listGroups(db, profileId, callerName), createdId: group.id });
+      }
+
+      case "rename": {
+        const groupId = payload.groupId;
+        if (typeof groupId !== "string") return json({ error: "groupId is required" }, 400);
+        const name = cleanGroupName(payload.name);
+        if (!name) return json({ error: "Give the group a name." }, 400);
+
+        // Any member may rename, the same as inviting: it is a shared label
+        // for the group, not something only its creator should control.
+        if (!(await isMember(db, groupId, profileId))) {
+          return json({ error: "You are not in that group." }, 403);
+        }
+
+        const { error: renameErr } = await db
+          .from("friend_groups")
+          .update({ name })
+          .eq("id", groupId);
+        if (renameErr) throw renameErr;
+        return json({ groups: await listGroups(db, profileId, callerName) });
       }
 
       case "invite": {

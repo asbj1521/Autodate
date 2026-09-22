@@ -1,10 +1,12 @@
 // Run with: deno test --node-modules-dir=none --allow-all supabase/functions/_shared/
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import {
+  cleanDisplayName,
   cleanGroupName,
   displayNameFor,
   inviteUrl,
   looksLikeInviteToken,
+  MAX_DISPLAY_NAME_LENGTH,
   MAX_GROUP_NAME_LENGTH,
   newInviteToken,
 } from "./groups.ts";
@@ -48,6 +50,17 @@ Deno.test("a long name is cut to the limit without a trailing space", () => {
   const name = cleanGroupName(`${"a".repeat(MAX_GROUP_NAME_LENGTH - 1)} bbbb`);
   assertEquals(name, "a".repeat(MAX_GROUP_NAME_LENGTH - 1));
   assertEquals(name!.length <= MAX_GROUP_NAME_LENGTH, true);
+});
+
+Deno.test("a chosen display name is tidied, capped and never left blank", () => {
+  assertEquals(cleanDisplayName("  Simon  "), "Simon");
+  assertEquals(cleanDisplayName("Two\nlines\tand\u0000nulls"), "Twolinesandnulls");
+  assertEquals(cleanDisplayName("   "), null);
+  assertEquals(cleanDisplayName(""), null);
+  assertEquals(cleanDisplayName(null), null);
+  assertEquals(cleanDisplayName(12), null);
+  const long = cleanDisplayName(`${"a".repeat(MAX_DISPLAY_NAME_LENGTH - 1)} bbbb`);
+  assertEquals(long, "a".repeat(MAX_DISPLAY_NAME_LENGTH - 1));
 });
 
 Deno.test("members are named, and never by their email address", () => {

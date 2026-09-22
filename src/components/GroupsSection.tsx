@@ -1,11 +1,13 @@
-import { Link } from "react-router-dom";
-import { Loader2, LogOut, Trash2, Users } from "lucide-react";
+import { useState } from "react";
+import { Check, Copy, Link2, Loader2, LogOut, Pencil, Trash2, Users } from "lucide-react";
 
 import type { Group } from "@/api/groups";
 import InfoTip from "@/components/InfoTip";
+import InlineTextEdit from "@/components/InlineTextEdit";
 import { plural } from "@/lib/accountSummary";
 import { avatarColor } from "@/lib/avatar";
 import { formatMonthYear } from "@/lib/format";
+import { inviteExpiryLabel, MAX_GROUP_NAME_LENGTH } from "@/lib/groups";
 import { cn } from "@/lib/utils";
 
 /** Which group's confirm panel is open, and for which action. */
@@ -14,7 +16,7 @@ export interface GroupConfirm {
   action: "leave" | "delete";
 }
 
-/** One group: its member avatars, and the leave/delete controls. */
+/** One group: its member avatars, the rename control, and the leave/delete controls. */
 function GroupRow({
   group,
   youId,
@@ -22,11 +24,24 @@ function GroupRow({
   leaving,
   deleting,
   error,
+  isRenaming,
+  renaming,
+  renameError,
+  inviteOpen,
+  inviteUrl,
+  inviteExpiresAt,
+  invitePending,
+  inviteError,
   onAskLeave,
   onAskDelete,
   onCancel,
   onLeave,
   onDelete,
+  onStartRename,
+  onCancelRename,
+  onSubmitRename,
+  onShareInvite,
+  onCloseInvite,
 }: {
   group: Group;
   youId: string;
@@ -34,11 +49,24 @@ function GroupRow({
   leaving: boolean;
   deleting: boolean;
   error: string | null;
+  isRenaming: boolean;
+  renaming: boolean;
+  renameError: string | null;
+  inviteOpen: boolean;
+  inviteUrl: string | null;
+  inviteExpiresAt: string | null;
+  invitePending: boolean;
+  inviteError: string | null;
   onAskLeave: () => void;
   onAskDelete: () => void;
   onCancel: () => void;
   onLeave: () => void;
   onDelete: () => void;
+  onStartRename: () => void;
+  onCancelRename: () => void;
+  onSubmitRename: (name: string) => void;
+  onShareInvite: () => void;
+  onCloseInvite: () => void;
 }) {
   const isCreator = group.createdBy === youId;
   // Leaving a group you're the only member of already deletes it (see
@@ -46,6 +74,18 @@ function GroupRow({
   // would just be a second way to do the same thing.
   const soleMember = group.members.length <= 1;
   const busy = leaving || deleting;
+  const [copied, setCopied] = useState(false);
+
+  async function copyLink() {
+    if (!inviteUrl) return;
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard access can be refused; the link is on screen to copy by hand.
+    }
+  }
 
   return (
     <li className="py-4">
@@ -71,20 +111,43 @@ function GroupRow({
         </div>
 
         <div className="min-w-0 flex-1">
-          <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-foreground">
-            <span className="truncate">{group.name}</span>
-            {isCreator && (
-              <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-                You made this
-              </span>
-            )}
-          </p>
+          {isRenaming ? (
+            <InlineTextEdit
+              value={group.name}
+              maxLength={MAX_GROUP_NAME_LENGTH}
+              submitting={renaming}
+              error={renameError}
+              onSubmit={onSubmitRename}
+              onCancel={onCancelRename}
+            />
+          ) : (
+            <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-foreground">
+              <span className="truncate">{group.name}</span>
+              <button
+                type="button"
+                onClick={onStartRename}
+                title="Rename this group"
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+              >
+                <Pencil className="h-3 w-3" />
+              </button>
+            </p>
+          )}
           <p className="mt-0.5 text-xs text-muted-foreground">
             {plural(group.members.length, "member")} · made {formatMonthYear(group.createdAt)}
           </p>
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={onShareInvite}
+            title="Get an invite link for this group"
+            className="flex items-center gap-1.5 rounded-full border bg-background px-3.5 py-1.5 text-sm font-semibold text-foreground transition hover:bg-secondary"
+          >
+            <Link2 className="h-4 w-4" />
+            Invite link
+          </button>
           <button
             type="button"
             onClick={onAskLeave}
@@ -105,6 +168,56 @@ function GroupRow({
           )}
         </div>
       </div>
+
+      {inviteOpen && (
+        <div className="mt-3 rounded-lg border bg-secondary/50 p-3">
+          {inviteUrl ? (
+            <>
+              <div className="flex items-center gap-2">
+                <input
+                  readOnly
+                  value={inviteUrl}
+                  onFocus={(e) => e.currentTarget.select()}
+                  className="min-w-0 flex-1 rounded-lg border bg-background px-3 py-2 font-mono text-xs text-foreground outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={copyLink}
+                  className={cn(
+                    "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition",
+                    copied
+                      ? "bg-primary/10 text-primary"
+                      : "bg-primary text-primary-foreground hover:opacity-90",
+                  )}
+                >
+                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  {copied ? "Copied" : "Copy"}
+                </button>
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <p className="text-xs text-muted-foreground">
+                  Anyone with this link can join. It works for{" "}
+                  {inviteExpiresAt ? inviteExpiryLabel(inviteExpiresAt) : "7 days"}.
+                </p>
+                <button
+                  type="button"
+                  onClick={onCloseInvite}
+                  className="shrink-0 text-xs font-medium text-muted-foreground transition hover:text-foreground"
+                >
+                  Done
+                </button>
+              </div>
+            </>
+          ) : invitePending ? (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Making a link…
+            </p>
+          ) : (
+            <p className="text-sm text-red-700">{inviteError ?? "Couldn't make an invite link."}</p>
+          )}
+        </div>
+      )}
 
       {confirm && (
         <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
@@ -155,11 +268,25 @@ export default function GroupsSection({
   leavingId,
   deletingId,
   actionError,
+  renamingId,
+  renameSubmittingId,
+  renameError,
+  inviteOpenId,
+  inviteUrl,
+  inviteExpiresAt,
+  invitePending,
+  inviteError,
   onAskLeave,
   onAskDelete,
   onCancel,
   onLeave,
   onDelete,
+  onStartRename,
+  onCancelRename,
+  onSubmitRename,
+  onCreateGroup,
+  onShareInvite,
+  onCloseInvite,
 }: {
   groups: Group[] | undefined;
   isPending: boolean;
@@ -169,34 +296,46 @@ export default function GroupsSection({
   leavingId: string | null;
   deletingId: string | null;
   actionError: { groupId: string; message: string } | null;
+  /** The group whose name is currently open for editing, if any. */
+  renamingId: string | null;
+  renameSubmittingId: string | null;
+  renameError: { groupId: string; message: string } | null;
+  /** The group whose invite link is currently shown, if any (one at a time). */
+  inviteOpenId: string | null;
+  inviteUrl: string | null;
+  inviteExpiresAt: string | null;
+  invitePending: boolean;
+  inviteError: string | null;
   onAskLeave: (groupId: string) => void;
   onAskDelete: (groupId: string) => void;
   onCancel: () => void;
   onLeave: (groupId: string) => void;
   onDelete: (groupId: string) => void;
+  onStartRename: (groupId: string) => void;
+  onCancelRename: () => void;
+  onSubmitRename: (groupId: string, name: string) => void;
+  onCreateGroup: () => void;
+  onShareInvite: (groupId: string) => void;
+  onCloseInvite: () => void;
 }) {
   return (
     <section className="mt-8">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="flex items-center gap-1.5 text-lg font-semibold text-foreground">
-            Your groups
-            <InfoTip label="What members can see">
-              Everyone in a group can see each other's name and when they are busy. Nobody sees
-              your email address, your calendars' names, or what any of your events are called.
-            </InfoTip>
-          </h2>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Leave any group, or delete one you made. Deleting removes it for everyone in it.
-          </p>
-        </div>
-        <Link
-          to="/"
+      <div className="flex flex-wrap items-center gap-3">
+        <h2 className="flex items-center gap-1.5 text-lg font-semibold text-foreground">
+          Your groups
+          <InfoTip label="What members can see">
+            Everyone in a group can see each other's name and when they are busy. Nobody sees
+            your email address, your calendars' names, or what any of your events are called.
+          </InfoTip>
+        </h2>
+        <button
+          type="button"
+          onClick={onCreateGroup}
           className="flex shrink-0 items-center gap-2 rounded-full border bg-background px-3.5 py-1.5 text-sm font-semibold text-foreground transition hover:bg-secondary"
         >
           <Users className="h-4 w-4" />
           Make a group
-        </Link>
+        </button>
       </div>
 
       {isPending ? (
@@ -209,9 +348,13 @@ export default function GroupsSection({
       ) : !groups || groups.length === 0 ? (
         <p className="mt-4 rounded-lg bg-secondary p-3 text-sm text-muted-foreground">
           You're not in a group yet.{" "}
-          <Link to="/" className="font-medium text-foreground underline underline-offset-2">
-            Make one from the scheduling page
-          </Link>{" "}
+          <button
+            type="button"
+            onClick={onCreateGroup}
+            className="font-medium text-foreground underline underline-offset-2"
+          >
+            Make one
+          </button>{" "}
           and invite people in.
         </p>
       ) : (
@@ -225,11 +368,24 @@ export default function GroupsSection({
               leaving={leavingId === g.id}
               deleting={deletingId === g.id}
               error={actionError?.groupId === g.id ? actionError.message : null}
+              isRenaming={renamingId === g.id}
+              renaming={renameSubmittingId === g.id}
+              renameError={renameError?.groupId === g.id ? renameError.message : null}
+              inviteOpen={inviteOpenId === g.id}
+              inviteUrl={inviteOpenId === g.id ? inviteUrl : null}
+              inviteExpiresAt={inviteOpenId === g.id ? inviteExpiresAt : null}
+              invitePending={inviteOpenId === g.id && invitePending}
+              inviteError={inviteOpenId === g.id ? inviteError : null}
               onAskLeave={() => onAskLeave(g.id)}
               onAskDelete={() => onAskDelete(g.id)}
               onCancel={onCancel}
               onLeave={() => onLeave(g.id)}
               onDelete={() => onDelete(g.id)}
+              onStartRename={() => onStartRename(g.id)}
+              onCancelRename={onCancelRename}
+              onSubmitRename={(name) => onSubmitRename(g.id, name)}
+              onShareInvite={() => onShareInvite(g.id)}
+              onCloseInvite={onCloseInvite}
             />
           ))}
         </ul>

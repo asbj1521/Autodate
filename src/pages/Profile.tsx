@@ -6,28 +6,46 @@ import {
   CalendarDays,
   CheckCircle2,
   ChevronLeft,
+  Link2,
   Loader2,
+  Pencil,
   RefreshCw,
   ShieldCheck,
   XCircle,
 } from "lucide-react";
+import { FaMicrosoft } from "react-icons/fa6";
+import { SiApple, SiGoogle } from "react-icons/si";
 
 import AppleCredentialsForm from "@/components/AppleCredentialsForm";
 import GroupsSection, { type GroupConfirm } from "@/components/GroupsSection";
 import IcsLinkForm from "@/components/IcsLinkForm";
+import InlineTextEdit from "@/components/InlineTextEdit";
+import NewGroupDialog from "@/components/NewGroupDialog";
 import ProviderCard, { type ProviderMeta } from "@/components/ProviderCard";
 import StatTile from "@/components/StatTile";
 import TopNav from "@/components/TopNav";
 import { displayName, useAuth } from "@/context/auth";
 import { plural } from "@/lib/accountSummary";
 import { avatarColor } from "@/lib/avatar";
-import { formatMonthYear } from "@/lib/format";
+import { MAX_DISPLAY_NAME_LENGTH } from "@/lib/groups";
 import {
   calendarStatusQuery,
   type CalendarConnectionStatus,
 } from "@/api/calendarStatus";
 import { adminStatusQuery } from "@/api/admin";
-import { deleteGroup, groupsQuery, groupsQueryKey, leaveGroup, type Group } from "@/api/groups";
+import {
+  createGroup,
+  createInvite,
+  deleteGroup,
+  groupsQuery,
+  groupsQueryKey,
+  leaveGroup,
+  renameGroup,
+  setDisplayName,
+  whoAmIQuery,
+  whoAmIQueryKey,
+  type Group,
+} from "@/api/groups";
 import { callFunction } from "@/lib/supabaseFunctions";
 import { cn } from "@/lib/utils";
 import type { CalendarProvider } from "@/types";
@@ -52,32 +70,35 @@ const PROVIDERS: ProviderMeta[] = [
   {
     id: "google",
     label: "Google Calendar",
-    initial: "G",
-    badgeClass: "bg-blue-100 text-blue-700",
+    icon: <SiGoogle className="h-4 w-4" style={{ color: "#4285F4" }} />,
+    badgeClass: "bg-blue-100",
     description:
       "Connect with one click. Casy only ever reads free and busy times, never event details.",
   },
   {
     id: "outlook",
     label: "Outlook Calendar",
-    initial: "O",
-    badgeClass: "bg-sky-100 text-sky-700",
+    // Simple Icons carries no Outlook-specific mark, so this is Microsoft's
+    // own logo (the closest real brand mark available) rather than a letter.
+    icon: <FaMicrosoft className="h-4 w-4" style={{ color: "#0078D4" }} />,
+    badgeClass: "bg-sky-100",
     description:
       "Connect with one click via your Microsoft account. Casy only ever reads free and busy times, never event details.",
   },
   {
     id: "apple",
     label: "Apple iCloud Calendar",
-    initial: "A",
-    badgeClass: "bg-neutral-200 text-neutral-800",
+    icon: <SiApple className="h-4 w-4 text-neutral-800" />,
+    badgeClass: "bg-neutral-200",
     description:
       "Apple has no one-click sign-in for calendars. Generate an app-specific password for Casy at account.apple.com, then enter your Apple ID email and that password.",
   },
   {
     id: "ics",
     label: "Calendar link (ICS)",
-    initial: "#",
-    badgeClass: "bg-violet-100 text-violet-700",
+    // Not a company, so a generic link icon rather than a brand mark.
+    icon: <Link2 className="h-4 w-4 text-violet-700" />,
+    badgeClass: "bg-violet-100",
     description:
       "Paste a calendar feed link, for example your school timetable or an Outlook publish link. Only start and end times are kept; titles, places and attendees are removed before anything is stored. These show as Special on the calendar overview.",
   },
@@ -98,7 +119,6 @@ const AdminPanel = lazy(() => import("@/components/AdminPanel"));
  */
 export default function Profile() {
   const { user } = useAuth();
-  const name = displayName(user);
   const [appleFormOpen, setAppleFormOpen] = useState(false);
   const [appleSubmitting, setAppleSubmitting] = useState(false);
   // Bumped after each successful connect, to remount the form and drop the
@@ -126,6 +146,20 @@ export default function Profile() {
     refetch: refetchStatus,
   } = useQuery(calendarStatusQuery(user.id));
 
+  // A custom name (set below by clicking the avatar) wins over the
+  // login-derived one; until that first load lands, fall back to the login
+  // so the header isn't empty for a beat.
+  const { data: whoAmI } = useQuery(whoAmIQuery(user.id));
+  const name = whoAmI?.name ?? displayName(user);
+  const [editingName, setEditingName] = useState(false);
+  const setNameMutation = useMutation({
+    mutationFn: setDisplayName,
+    onSuccess: (data) => {
+      queryClient.setQueryData(whoAmIQueryKey(user.id), data);
+      setEditingName(false);
+    },
+  });
+
   // Your groups: fetched here (rather than inside GroupsSection) so the stat
   // strip above it can use the same count without a second request.
   const {
@@ -134,6 +168,9 @@ export default function Profile() {
     isError: groupsFailed,
   } = useQuery(groupsQuery(user.id));
   const [groupConfirm, setGroupConfirm] = useState<GroupConfirm | null>(null);
+  const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null);
+  const [newGroupOpen, setNewGroupOpen] = useState(false);
+  const [inviteGroupId, setInviteGroupId] = useState<string | null>(null);
 
   // Admin mode. The server says whether this person is an admin (and checks
   // again on every admin action); the page only uses the answer to decide
@@ -153,6 +190,61 @@ export default function Profile() {
   };
   const leaveGroupMutation = useMutation({ mutationFn: leaveGroup, onSuccess: onGroupsChanged });
   const deleteGroupMutation = useMutation({ mutationFn: deleteGroup, onSuccess: onGroupsChanged });
+  const renameGroupMutation = useMutation({
+    mutationFn: ({ groupId, name }: { groupId: string; name: string }) => renameGroup(groupId, name),
+    onSuccess: (data) => {
+      onGroupsChanged(data);
+      setRenamingGroupId(null);
+    },
+  });
+
+  const renameActionError =
+    renameGroupMutation.isError && renameGroupMutation.variables
+      ? {
+          groupId: renameGroupMutation.variables.groupId,
+          message:
+            renameGroupMutation.error instanceof Error
+              ? renameGroupMutation.error.message
+              : "Couldn't rename the group",
+        }
+      : null;
+
+  function startRenameGroup(groupId: string) {
+    renameGroupMutation.reset();
+    setRenamingGroupId(groupId);
+  }
+  function cancelRenameGroup() {
+    renameGroupMutation.reset();
+    setRenamingGroupId(null);
+  }
+
+  const createGroupMutation = useMutation({
+    mutationFn: createGroup,
+    onSuccess: (data) => {
+      onGroupsChanged(data);
+      setNewGroupOpen(false);
+    },
+  });
+
+  // A fresh link every time "Share invite link" is pressed (see the `groups`
+  // function); only one group's link is shown on screen at a time.
+  const inviteMutation = useMutation({ mutationFn: (groupId: string) => createInvite(groupId) });
+  const invite =
+    inviteMutation.data && inviteMutation.variables === inviteGroupId ? inviteMutation.data : null;
+  const inviteActionError =
+    inviteMutation.isError && inviteMutation.variables === inviteGroupId
+      ? inviteMutation.error instanceof Error
+        ? inviteMutation.error.message
+        : "Couldn't make an invite link"
+      : null;
+
+  function shareInvite(groupId: string) {
+    setInviteGroupId(groupId);
+    inviteMutation.mutate(groupId);
+  }
+  function closeInvite() {
+    setInviteGroupId(null);
+  }
 
   const groupActionError =
     leaveGroupMutation.isError && leaveGroupMutation.variables
@@ -390,27 +482,50 @@ export default function Profile() {
             calendars themselves. */}
         <div className="mt-5 rounded-2xl border bg-card p-5 shadow-sm sm:p-6">
           <div className="flex flex-wrap items-center gap-4">
-            <span
+            <button
+              type="button"
+              onClick={() => {
+                setNameMutation.reset();
+                setEditingName(true);
+              }}
+              title="Change your display name"
               className={cn(
-                "flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-xl font-semibold",
+                "group relative flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-xl font-semibold",
                 avatarColor(0),
               )}
             >
               {name.charAt(0).toUpperCase()}
-            </span>
+              <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+                <Pencil className="h-5 w-5 text-white" />
+              </span>
+            </button>
             <div className="min-w-0 flex-1">
-              <h1 className="truncate text-xl font-bold leading-tight text-foreground">{name}</h1>
-              <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 truncate text-sm text-muted-foreground">
-                {/* Under a Google name, the email says which account this is;
-                    when the email is already the name, it would only repeat it. */}
-                {user?.email && user.email !== name && <span>{user.email}</span>}
-                {user?.email && user.email !== name && user.created_at && <span>·</span>}
-                {user?.created_at && (
-                  <span className="whitespace-nowrap">
-                    Casy member since {formatMonthYear(user.created_at)}
+              {editingName ? (
+                <InlineTextEdit
+                  value={name}
+                  maxLength={MAX_DISPLAY_NAME_LENGTH}
+                  submitting={setNameMutation.isPending}
+                  error={
+                    setNameMutation.error instanceof Error
+                      ? setNameMutation.error.message
+                      : null
+                  }
+                  inputClassName="text-xl font-bold"
+                  onSubmit={(newName) => setNameMutation.mutate(newName)}
+                  onCancel={() => setEditingName(false)}
+                />
+              ) : (
+                <p className="flex flex-wrap items-baseline gap-x-2">
+                  <span className="truncate text-xl font-bold leading-tight text-foreground">
+                    {name}
                   </span>
-                )}
-              </p>
+                  {/* Under a Google name, the email says which account this is;
+                      when the email is already the name, it would only repeat it. */}
+                  {user?.email && user.email !== name && (
+                    <span className="truncate text-sm text-muted-foreground">{user.email}</span>
+                  )}
+                </p>
+              )}
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2">
               {isAdmin && (
@@ -489,23 +604,43 @@ export default function Profile() {
                 deleteGroupMutation.isPending ? (deleteGroupMutation.variables ?? null) : null
               }
               actionError={groupActionError}
+              renamingId={renamingGroupId}
+              renameSubmittingId={
+                renameGroupMutation.isPending ? (renameGroupMutation.variables?.groupId ?? null) : null
+              }
+              renameError={renameActionError}
+              inviteOpenId={inviteGroupId}
+              inviteUrl={invite?.url ?? null}
+              inviteExpiresAt={invite?.expiresAt ?? null}
+              invitePending={inviteMutation.isPending}
+              inviteError={inviteActionError}
               onAskLeave={askLeaveGroup}
               onAskDelete={askDeleteGroup}
               onCancel={() => setGroupConfirm(null)}
               onLeave={(groupId) => leaveGroupMutation.mutate(groupId)}
               onDelete={(groupId) => deleteGroupMutation.mutate(groupId)}
+              onStartRename={startRenameGroup}
+              onCancelRename={cancelRenameGroup}
+              onSubmitRename={(groupId, name) => renameGroupMutation.mutate({ groupId, name })}
+              onCreateGroup={() => {
+                createGroupMutation.reset();
+                setNewGroupOpen(true);
+              }}
+              onShareInvite={shareInvite}
+              onCloseInvite={closeInvite}
+            />
+            <NewGroupDialog
+              open={newGroupOpen}
+              submitting={createGroupMutation.isPending}
+              error={createGroupMutation.error instanceof Error ? createGroupMutation.error.message : null}
+              onSubmit={(name) => createGroupMutation.mutate(name)}
+              onCancel={() => setNewGroupOpen(false)}
             />
 
             {/* Connected calendars */}
             <section className="mt-8">
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-semibold text-foreground">Connected calendars</h2>
-                  <p className="mt-0.5 text-sm text-muted-foreground">
-                    Only free and busy times are read, never event titles or details. Calendars sync
-                    automatically every hour.
-                  </p>
-                </div>
+                <h2 className="text-lg font-semibold text-foreground">Connected calendars</h2>
                 {hasConnected && (
                   <button
                     type="button"

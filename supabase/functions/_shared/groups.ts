@@ -63,6 +63,16 @@ export function cleanGroupName(raw: unknown): string | null {
   return name.length > 0 ? name : null;
 }
 
+/** Longest custom display name we keep. */
+export const MAX_DISPLAY_NAME_LENGTH = 40;
+
+/** A display name as a person typed it, cleaned up the same way a group name is. */
+export function cleanDisplayName(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const name = stripControlChars(raw).trim().slice(0, MAX_DISPLAY_NAME_LENGTH).trim();
+  return name.length > 0 ? name : null;
+}
+
 /** The shape of an auth user, as much of it as naming someone needs. */
 export interface NameableUser {
   email?: string | null;
