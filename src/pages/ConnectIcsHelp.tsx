@@ -19,7 +19,7 @@ const SOURCES: Source[] = [
     icon: SiApple,
     badge: "Fastest, if it applies to you",
     title: "Already subscribed to it in Apple Calendar?",
-    body: "If you've already added this calendar to your iPhone or Mac (a school timetable, for example), you don't need to go find the original link again. Open the Calendar app, right-click (or Control-click) the calendar in the sidebar and choose Get Info — the feed's link is right there, ready to copy.",
+    body: "If you've already added this calendar to your iPhone or Mac (a school timetable, for example), you don't need to go find the original link again. Open the Calendar app, right-click (or Control-click) the calendar in the sidebar and choose Get Info. The feed's link is right there, ready to copy.",
     visual: (
       <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
         <div className="grid grid-cols-[128px_1fr] divide-x">
@@ -56,7 +56,7 @@ const SOURCES: Source[] = [
     visual: (
       <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
         <div className="border-b px-4 py-2 text-xs font-semibold text-muted-foreground">
-          Sharing Settings — Family
+          Sharing Settings: Family
         </div>
         <div className="space-y-3 p-4">
           <div className="flex items-center justify-between">
@@ -79,7 +79,7 @@ const SOURCES: Source[] = [
     icon: SiGoogle,
     badge: "Google Calendar",
     title: "From Google Calendar's settings",
-    body: "On calendar.google.com, open Settings, pick the calendar under \"Settings for my calendars\", and scroll to \"Integrate calendar\". Copy the \"Secret address in iCal format\" — treat it like a password, since anyone with it can read the calendar.",
+    body: "On calendar.google.com, open Settings, pick the calendar under \"Settings for my calendars\", and scroll to \"Integrate calendar\". Copy the \"Secret address in iCal format\" and treat it like a password, since anyone with it can read the calendar.",
     visual: (
       <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
         <div className="border-b px-4 py-2 text-xs font-semibold text-muted-foreground">
@@ -125,7 +125,7 @@ const SOURCES: Source[] = [
     icon: Building2,
     badge: "A school or work platform",
     title: "From a timetable or scheduling site",
-    body: "Look around its calendar or account settings for wording like the ones below — that's usually where the link is.",
+    body: "Look around its calendar or account settings for wording like the ones below. That's usually where the link is.",
     visual: (
       <div className="rounded-xl border bg-background p-4 shadow-sm">
         <div className="flex flex-wrap gap-2">
@@ -174,7 +174,7 @@ export default function ConnectIcsHelp() {
         </h1>
         <p className="mt-3 max-w-2xl text-base text-muted-foreground">
           A calendar link (also called an ICS or webcal link) works for any calendar that
-          publishes one — a school timetable, a work schedule, or one from Google, Outlook or
+          publishes one: a school timetable, a work schedule, or one from Google, Outlook or
           iCloud. Where to find it depends on where the calendar lives, so pick whichever matches
           yours below.
         </p>

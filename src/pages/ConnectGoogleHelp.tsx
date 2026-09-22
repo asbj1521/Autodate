@@ -17,7 +17,7 @@ const STEPS: Step[] = [
   {
     icon: SiGoogle,
     title: "Click Connect",
-    body: "On the Google Calendar card, click Connect. Google opens in a new tab and asks which account to use.",
+    body: "On the Google Calendar card, click Connect. Google opens and asks which account to use.",
     visual: (
       <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
         <div className="flex items-center justify-between px-4 py-3">
@@ -58,7 +58,7 @@ const STEPS: Step[] = [
   {
     icon: AlertTriangle,
     title: "\"Google hasn't verified this app\"? That's expected",
-    body: "Casy is a small app awaiting Google's review, so Google shows a warning before continuing. Click Advanced, then Go to Casy (unsafe) to proceed — Google only lets this through because Casy has told Google exactly which permissions it needs, and asks for nothing beyond your free/busy times.",
+    body: "Casy is a small app awaiting Google's review, so Google shows a warning before continuing. Click Advanced, then Go to Casy (unsafe) to continue. Casy only asks for your free and busy times.",
     visual: (
       <div className="overflow-hidden rounded-xl border border-amber-200 bg-amber-50 shadow-sm">
         <div className="flex items-start gap-3 p-4">
@@ -155,7 +155,7 @@ export default function ConnectGoogleHelp() {
 
         <p className="mt-8 flex items-start gap-2 text-sm text-muted-foreground">
           <EyeOff className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-          Casy never asks Google for event titles, places or guests — only when you're busy.
+          Casy never asks Google for event titles, places or guests. It only sees when you're busy.
         </p>
 
         <div className="mt-6">

@@ -17,7 +17,7 @@ const STEPS: Step[] = [
   {
     icon: FaMicrosoft,
     title: "Click Connect",
-    body: "On the Outlook Calendar card, click Connect. Microsoft opens in a new tab and asks you to sign in.",
+    body: "On the Outlook Calendar card, click Connect. Microsoft opens and asks you to sign in.",
     visual: (
       <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
         <div className="flex items-center justify-between px-4 py-3">
@@ -37,7 +37,7 @@ const STEPS: Step[] = [
   {
     icon: FaMicrosoft,
     title: "Sign in with your Microsoft account",
-    body: "Work, school or personal — whichever account's calendar you want to read.",
+    body: "Work, school or personal: whichever account's calendar you want to read.",
     visual: (
       <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
         <div className="border-b px-4 py-2 text-xs font-semibold text-muted-foreground">
@@ -66,7 +66,7 @@ const STEPS: Step[] = [
         <div className="space-y-2 p-4">
           <div className="flex items-center gap-2 rounded-lg bg-primary/10 px-3 py-2 text-sm text-primary ring-1 ring-inset ring-primary/40">
             <CheckCircle2 className="h-4 w-4 shrink-0" />
-            Have full access to your calendars
+            Read your calendars
           </div>
           <span className="mt-2 inline-block rounded-full bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground">
             Accept
@@ -129,7 +129,7 @@ export default function ConnectOutlookHelp() {
 
         <p className="mt-8 flex items-start gap-2 text-sm text-muted-foreground">
           <EyeOff className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-          Casy never asks Microsoft for event titles, places or guests — only when you're busy.
+          Casy never asks Microsoft for event titles, places or guests. It only sees when you're busy.
         </p>
 
         <div className="mt-4 flex items-start gap-2 rounded-xl bg-secondary p-4 text-sm text-muted-foreground">
@@ -144,7 +144,7 @@ export default function ConnectOutlookHelp() {
             >
               Calendar link (ICS)
             </Link>{" "}
-            instead — it's a common workaround for accounts managed by an organization.
+            instead. It's a common workaround for accounts managed by an organization.
           </p>
         </div>
 

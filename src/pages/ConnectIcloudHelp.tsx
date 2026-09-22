@@ -123,7 +123,7 @@ const STEPS: Step[] = [
   {
     icon: KeyRound,
     title: "Label it and copy the password",
-    body: "Type a label, such as \"Casy\", and confirm. Apple shows the new password once — copy it before closing the dialog.",
+    body: "Type a label, such as \"Casy\", and confirm. Apple shows the new password only once, so copy it before closing the dialog.",
     visual: (
       <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
         <div className="border-b px-4 py-2 text-xs font-semibold text-muted-foreground">
