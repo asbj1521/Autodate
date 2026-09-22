@@ -1,17 +1,19 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { Link } from "react-router-dom";
 import {
-  AlertTriangle,
   CalendarOff,
   Check,
   Copy,
   Link2,
   Loader2,
   LogOut,
+  UserPlus,
   Users,
 } from "lucide-react";
 
 import InfoTip from "@/components/InfoTip";
+import { useAuth } from "@/context/auth";
 import { avatarColor } from "@/lib/avatar";
 import { inviteExpiryLabel } from "@/lib/groups";
 import { cn } from "@/lib/utils";
@@ -21,15 +23,17 @@ import type { SchedulingGroup } from "@/hooks/useSchedulingGroups";
  * Who is in the group you are scheduling for, how to get more people in, and
  * how to get out.
  *
- * The member list is honest about two different kinds of gap: someone who has
- * joined but linked no calendar yet (so nothing is known about their time),
- * and the example group, where nobody is real at all. Both are said out loud
- * rather than quietly folded into a result, because a scheduling answer is
- * only worth anything if you know whose calendars it was based on.
+ * The member list is honest about a gap real groups can have: someone who has
+ * joined but linked no calendar yet, so nothing is known about their time.
+ * That is said out loud rather than quietly folded into a result, because a
+ * scheduling answer is only worth anything if you know whose calendars it was
+ * based on. The example group is made up entirely, which is disclosed
+ * elsewhere on the page rather than repeated here; a logged-out visitor gets
+ * a sign-up nudge in this spot instead, since they are the ones who would
+ * otherwise have nothing real to look at.
  */
 export default function GroupPanel({
   group,
-  carouselRunning,
   busyLoading,
   inviteUrl,
   inviteExpiresAt,
@@ -40,8 +44,6 @@ export default function GroupPanel({
   onLeave,
 }: {
   group: SchedulingGroup;
-  /** True while the front page is still cycling through the examples. */
-  carouselRunning: boolean;
   busyLoading: boolean;
   inviteUrl: string | null;
   inviteExpiresAt: string | null;
@@ -51,6 +53,7 @@ export default function GroupPanel({
   leavePending: boolean;
   onLeave: () => void;
 }) {
+  const { user } = useAuth();
   const [copied, setCopied] = useState(false);
   const [confirmingLeave, setConfirmingLeave] = useState(false);
 
@@ -69,39 +72,25 @@ export default function GroupPanel({
   }
 
   if (group.isExample) {
+    // A signed-in person with no real groups yet already has a profile; the
+    // nudge below is only for a logged-out visitor still looking at made-up
+    // data.
+    if (user) return null;
     return (
-      // Cross-faded on the same half second as the calendar beside it. The
-      // head count here and the "3/10 free" on the calendar describe the same
-      // group, so they have to change together: swapping this text instantly
-      // left the two contradicting each other for the length of the fade.
-      <div className="grid [&>*]:col-start-1 [&>*]:row-start-1">
-        <AnimatePresence initial={false}>
-          <motion.div
-            key={group.id}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0, pointerEvents: "none" }}
-            transition={{ duration: 0.5, ease: "easeInOut" }}
-            className="rounded-2xl border border-amber-200 bg-amber-50 p-4"
-          >
-            <h3 className="flex items-center gap-2 text-sm font-bold text-amber-900">
-              <AlertTriangle className="h-4 w-4" />
-              This is an example
-            </h3>
-            <p className="mt-1 text-sm text-amber-900">
-              {group.memberCount === 1
-                ? "This person is made up, and so is their calendar."
-                : `These ${group.memberCount} people are made up, and so are their calendars.`}{" "}
-              Your own calendar is real if you have linked one, so you can see how the search
-              behaves.
-            </p>
-            <p className="mt-2 text-sm text-amber-900">
-              {carouselRunning
-                ? "The examples change every few seconds. Touch anything to stop them and look properly."
-                : "Make a group and invite someone to find a date with real people."}
-            </p>
-          </motion.div>
-        </AnimatePresence>
+      <div className="rounded-2xl border bg-card p-4">
+        <h3 className="flex items-center gap-2 text-sm font-bold text-foreground">
+          <UserPlus className="h-4 w-4 text-primary" />
+          Don't have a profile yet?
+        </h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Sign up to link your own calendar and make a group with real people.
+        </p>
+        <Link
+          to="/sign-in?next=/&signup=1"
+          className="mt-3 inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
+        >
+          Sign up
+        </Link>
       </div>
     );
   }

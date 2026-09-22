@@ -49,7 +49,11 @@ export default function SignIn() {
   const next = safeNext(searchParams.get("next"));
 
   const [mode, setMode] = useState<"link" | "password">("password");
-  const [passwordTab, setPasswordTab] = useState<"signin" | "signup">("signin");
+  // A "Sign up" link elsewhere (e.g. the example-group nudge) can land here
+  // with ?signup=1 to open straight on the create-account tab.
+  const [passwordTab, setPasswordTab] = useState<"signin" | "signup">(
+    searchParams.get("signup") ? "signup" : "signin",
+  );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [sending, setSending] = useState(false);

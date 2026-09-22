@@ -806,7 +806,6 @@ export default function FindDate() {
               <div className="mt-4">
                 <GroupPanel
                   group={activeGroup}
-                  carouselRunning={carousel.running}
                   busyLoading={busyLoading}
                   inviteUrl={invite?.url ?? null}
                   inviteExpiresAt={invite?.expiresAt ?? null}
