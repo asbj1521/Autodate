@@ -60,7 +60,8 @@ function cellLabel(date: Date, segments: DaySegment[]): string {
 const FALLBACK_RGB = "113, 113, 122";
 
 /** A narrow week-number column, then seven equal day columns. */
-const GRID_COLUMNS = "grid grid-cols-[2.75rem_repeat(7,minmax(0,1fr))]";
+// No week-number column on a phone: the seven days need every pixel.
+const GRID_COLUMNS = "grid grid-cols-7 sm:grid-cols-[2.75rem_repeat(7,minmax(0,1fr))]";
 
 /** Rows shown inside a day cell before collapsing the rest into "+N more". */
 const MAX_ROWS_PER_CELL = 3;
@@ -275,13 +276,16 @@ export default function CalendarOverview() {
           <div className="min-w-0 overflow-hidden rounded-xl border bg-card lg:col-start-1 lg:row-start-2">
             <div className={cn(GRID_COLUMNS, "border-b bg-secondary/40")}>
               <div
-                className="px-1 py-2 text-center text-xs font-medium text-muted-foreground"
+                className="hidden px-1 py-2 text-center text-xs font-medium text-muted-foreground sm:block"
                 title="Week number"
               >
                 uge
               </div>
               {layout.weekdayLabels.map((label) => (
-                <div key={label} className="px-2 py-2 text-xs font-medium text-muted-foreground">
+                <div
+                  key={label}
+                  className="px-0.5 py-2 text-center text-[11px] font-medium text-muted-foreground sm:px-2 sm:text-left sm:text-xs"
+                >
                   {label}
                 </div>
               ))}
@@ -311,7 +315,7 @@ export default function CalendarOverview() {
                       <div
                         title={`Week ${layout.weekNumbers[rowIndex]}`}
                         className={cn(
-                          "flex items-start justify-center border-b border-r bg-secondary/40 pt-2.5 text-xs text-muted-foreground",
+                          "hidden items-start justify-center border-b border-r bg-secondary/40 pt-2.5 text-xs text-muted-foreground sm:flex",
                           isCurrentWeek && "font-semibold text-foreground",
                         )}
                       >
@@ -324,23 +328,41 @@ export default function CalendarOverview() {
                       aria-label={cellLabel(cell.date, segments)}
                       aria-pressed={isSelected}
                       className={cn(
-                        "relative flex min-h-[104px] flex-col border-b border-r p-1.5 text-left transition hover:bg-secondary/40",
+                        "relative flex min-h-[60px] flex-col border-b border-r p-1 text-left transition hover:bg-secondary/40 sm:min-h-[104px] sm:p-1.5",
                         isSelected && "ring-2 ring-inset ring-primary/60",
                       )}
                     >
                       <span
                         className={cn(
-                          "inline-flex h-6 min-w-6 items-center justify-center self-start rounded-full px-1 text-xs",
+                          "inline-flex h-6 min-w-6 items-center justify-center self-center rounded-full px-1 text-xs sm:self-start",
                           !cell.inMonth && "text-muted-foreground/40",
                           cell.inMonth && isPast && "text-muted-foreground",
                           cell.inMonth && !isPast && !isToday && "text-foreground",
                           isToday && "bg-primary font-semibold text-primary-foreground",
                         )}
                       >
-                        {numberLabel}
+                        <span className="sm:hidden">{cell.dayOfMonth}</span>
+                        <span className="hidden sm:inline">{numberLabel}</span>
                       </span>
 
-                      <div className="mt-1 flex flex-col gap-0.5">
+                      {/* A phone cell only fits a dot per block, in its
+                          calendar's colour; tapping the day lists them below. */}
+                      {segments.length > 0 && (
+                        <div className="mt-1 flex flex-wrap justify-center gap-0.5 sm:hidden">
+                          {segments.slice(0, 4).map((seg, i) => (
+                            <span
+                              key={i}
+                              className="h-1.5 w-1.5 rounded-full"
+                              style={{ backgroundColor: `rgb(${colorOf(seg.calendarId)})` }}
+                            />
+                          ))}
+                          {segments.length > 4 && (
+                            <span className="text-[9px] leading-none text-muted-foreground">+</span>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="mt-1 hidden flex-col gap-0.5 sm:flex">
                         {shown.map((seg, i) => {
                           const rgb = colorOf(seg.calendarId);
                           const cal = calendarById.get(seg.calendarId);
@@ -385,7 +407,7 @@ export default function CalendarOverview() {
             </div>
           </div>
 
-          <section className="mt-6 min-w-0 rounded-2xl border bg-card p-5 shadow-sm lg:col-start-1 lg:row-start-3">
+          <section className="mt-4 min-w-0 rounded-2xl border bg-card p-4 shadow-sm sm:mt-6 sm:p-5 lg:col-start-1 lg:row-start-3">
             <h3 className="font-semibold text-foreground">
               {selectedDay?.date.toLocaleDateString("en-GB", {
                 weekday: "long",

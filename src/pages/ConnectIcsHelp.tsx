@@ -22,7 +22,7 @@ const SOURCES: Source[] = [
     body: "If you've already added this calendar to your iPhone or Mac (a school timetable, for example), you don't need to go find the original link again. Open the Calendar app, right-click (or Control-click) the calendar in the sidebar and choose Get Info. The feed's link is right there, ready to copy.",
     visual: (
       <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
-        <div className="grid grid-cols-[128px_1fr] divide-x">
+        <div className="grid grid-cols-[104px_1fr] divide-x sm:grid-cols-[128px_1fr]">
           <div className="divide-y bg-secondary/40 text-sm">
             <div className="px-3 py-2 text-muted-foreground">Home</div>
             <div className="bg-primary/10 px-3 py-2 font-medium text-primary ring-1 ring-inset ring-primary/40">
@@ -31,7 +31,7 @@ const SOURCES: Source[] = [
             <div className="px-3 py-2 text-muted-foreground">Family</div>
           </div>
           <div className="relative p-3">
-            <div className="w-44 rounded-lg border bg-background p-1 text-xs shadow-md">
+            <div className="w-full max-w-44 rounded-lg border bg-background p-1 text-xs shadow-md">
               <div className="rounded-md bg-primary/10 px-2.5 py-1.5 font-medium text-primary">
                 Get Info
               </div>
@@ -157,7 +157,7 @@ export default function ConnectIcsHelp() {
   return (
     <div className="min-h-screen bg-background">
       <TopNav />
-      <main className="mx-auto max-w-3xl px-6 pb-20 pt-6">
+      <main className="mx-auto max-w-3xl px-4 pb-16 pt-4 sm:px-6 sm:pb-20 sm:pt-6">
         <Link
           to="/profile"
           className="flex items-center gap-1.5 text-sm text-muted-foreground transition hover:text-foreground"
@@ -169,10 +169,10 @@ export default function ConnectIcsHelp() {
         <p className="mt-4 text-sm font-semibold uppercase tracking-wide text-primary">
           How to find your link
         </p>
-        <h1 className="mt-2 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+        <h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground sm:text-4xl">
           Find your calendar's link
         </h1>
-        <p className="mt-3 max-w-2xl text-base text-muted-foreground">
+        <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-base">
           A calendar link (also called an ICS or webcal link) works for any calendar that
           publishes one: a school timetable, a work schedule, or one from Google, Outlook or
           iCloud. Where to find it depends on where the calendar lives, so pick whichever matches
@@ -188,9 +188,9 @@ export default function ConnectIcsHelp() {
           </p>
         </div>
 
-        <ul className="mt-8 space-y-6">
+        <ul className="mt-6 space-y-4 sm:mt-8 sm:space-y-6">
           {SOURCES.map((source) => (
-            <li key={source.title} className="rounded-2xl border bg-card p-5 shadow-sm">
+            <li key={source.title} className="rounded-2xl border bg-card p-4 shadow-sm sm:p-5">
               <div className="flex items-start gap-3">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
                   <source.icon className="h-4 w-4" />
@@ -205,7 +205,7 @@ export default function ConnectIcsHelp() {
                   </p>
                 </div>
               </div>
-              <div className="mt-4 sm:ml-12">{source.visual}</div>
+              <div className="mt-3 sm:ml-12 sm:mt-4">{source.visual}</div>
             </li>
           ))}
         </ul>

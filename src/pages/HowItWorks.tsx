@@ -82,21 +82,21 @@ export default function HowItWorks() {
   return (
     <div className="min-h-screen bg-background">
       <TopNav />
-      <main className="mx-auto max-w-3xl px-6 pb-20 pt-6">
+      <main className="mx-auto max-w-3xl px-4 pb-16 pt-4 sm:px-6 sm:pb-20 sm:pt-6">
         <p className="text-sm font-semibold uppercase tracking-wide text-primary">How it works</p>
-        <h1 className="mt-2 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+        <h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground sm:text-4xl">
           From "when are you free?" to a date, without the group chat.
         </h1>
-        <p className="mt-3 max-w-2xl text-base text-muted-foreground">
+        <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-base">
           Casy compares everyone's calendars and finds the first time the whole group is free. Set
           it up once, and every plan after that takes seconds.
         </p>
 
         <ol className="mt-10 space-y-3">
           {STEPS.map((step, i) => (
-            <li key={step.title} className="flex gap-4 rounded-2xl border bg-card p-5 shadow-sm">
+            <li key={step.title} className="flex gap-3 rounded-2xl border bg-card p-4 shadow-sm sm:gap-4 sm:p-5">
               <div className="flex shrink-0 flex-col items-center">
-                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary sm:h-10 sm:w-10">
                   <step.icon className="h-5 w-5" />
                 </span>
               </div>

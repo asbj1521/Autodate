@@ -83,7 +83,7 @@ export default function CalendarListPanel({
     });
 
   return (
-    <aside className="rounded-2xl border bg-card p-5 shadow-sm">
+    <aside className="rounded-2xl border bg-card p-4 shadow-sm sm:p-5">
       <h2 className="font-semibold text-foreground">Your calendars</h2>
       <p className="mt-1 text-xs text-muted-foreground">
         Tick a calendar to show it on the grid. Open a group to give each calendar a category;

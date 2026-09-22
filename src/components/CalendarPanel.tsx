@@ -40,7 +40,7 @@ export default function CalendarPanel({
         {grid.weekdayLabels.map((label) => (
           <div
             key={label}
-            className="px-2 py-2 text-xs font-medium text-muted-foreground"
+            className="px-0.5 py-2 text-center text-[11px] font-medium text-muted-foreground sm:px-2 sm:text-left sm:text-xs"
           >
             {label}
           </div>
@@ -89,7 +89,7 @@ export default function CalendarPanel({
                     }`
                   : undefined
               }
-              className="relative min-h-[80px] border-b border-r p-1.5"
+              className="relative min-h-[58px] border-b border-r p-1 sm:min-h-[80px] sm:p-1.5"
               style={
                 inMonth && !cell.excluded
                   ? frac > 0
@@ -108,7 +108,7 @@ export default function CalendarPanel({
               }
             >
               {/* Date number (today gets a filled circle) */}
-              <div className="flex">
+              <div className="flex justify-center sm:justify-start">
                 <span
                   className={cn(
                     "inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-xs",
@@ -118,7 +118,9 @@ export default function CalendarPanel({
                     isToday && "bg-primary font-semibold text-primary-foreground",
                   )}
                 >
-                  {numberLabel}
+                  {/* A phone cell is too narrow for "1. sep."; the month is in the heading. */}
+                  <span className="sm:hidden">{cell.dayOfMonth}</span>
+                  <span className="hidden sm:inline">{numberLabel}</span>
                 </span>
               </div>
 
@@ -129,12 +131,15 @@ export default function CalendarPanel({
                   {inBestSpan ? (
                     isBestStart ? (
                       <div
-                        className="flex items-center gap-1 rounded-[4px] px-1 py-0.5 text-[10px] font-semibold text-primary-foreground"
+                        className="flex items-center justify-center gap-1 rounded-[4px] px-1 py-0.5 text-[10px] font-semibold text-primary-foreground sm:justify-start"
                         style={{ backgroundColor: `rgb(${ACCENT_RGB})` }}
                       >
                         <Star className="h-2.5 w-2.5 shrink-0 fill-current" />
                         <span className="truncate">
-                          Best{bestTimeLabel ? ` · ${bestTimeLabel}` : ""}
+                          Best
+                          {bestTimeLabel && (
+                            <span className="hidden sm:inline"> · {bestTimeLabel}</span>
+                          )}
                         </span>
                       </div>
                     ) : (
@@ -144,9 +149,9 @@ export default function CalendarPanel({
                       />
                     )
                   ) : (
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center justify-center gap-1 sm:justify-start">
                       <span
-                        className="h-3.5 w-[3px] shrink-0 rounded-full"
+                        className="hidden h-3.5 w-[3px] shrink-0 rounded-full sm:block"
                         style={{
                           backgroundColor:
                             cell.freeCount === 0 && cell.conditionalCount > 0
@@ -154,10 +159,14 @@ export default function CalendarPanel({
                               : `rgba(${ACCENT_RGB}, ${(0.35 + 0.65 * frac).toFixed(2)})`,
                         }}
                       />
-                      <span className="truncate text-[10px] text-muted-foreground">
-                        {cell.conditionalCount > 0
-                          ? `${cell.freeCount}/${cell.total} free · ${cell.conditionalCount} work`
-                          : `${cell.freeCount}/${cell.total} free`}
+                      {/* On a phone only the count fits; the cell's colour
+                          already says whether time off would be needed. */}
+                      <span className="truncate text-[10px] tabular-nums text-muted-foreground">
+                        {cell.freeCount}/{cell.total}
+                        <span className="hidden sm:inline">
+                          {" free"}
+                          {cell.conditionalCount > 0 && ` · ${cell.conditionalCount} work`}
+                        </span>
                       </span>
                     </div>
                   )}

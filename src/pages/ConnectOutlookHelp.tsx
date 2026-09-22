@@ -86,7 +86,7 @@ export default function ConnectOutlookHelp() {
   return (
     <div className="min-h-screen bg-background">
       <TopNav />
-      <main className="mx-auto max-w-3xl px-6 pb-20 pt-6">
+      <main className="mx-auto max-w-3xl px-4 pb-16 pt-4 sm:px-6 sm:pb-20 sm:pt-6">
         <Link
           to="/profile"
           className="flex items-center gap-1.5 text-sm text-muted-foreground transition hover:text-foreground"
@@ -98,16 +98,16 @@ export default function ConnectOutlookHelp() {
         <p className="mt-4 text-sm font-semibold uppercase tracking-wide text-primary">
           How it works
         </p>
-        <h1 className="mt-2 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+        <h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground sm:text-4xl">
           Connect Outlook Calendar
         </h1>
-        <p className="mt-3 max-w-2xl text-base text-muted-foreground">
+        <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-base">
           One click, no password to type. Here's exactly what happens.
         </p>
 
-        <ol className="mt-10 space-y-6">
+        <ol className="mt-8 space-y-4 sm:mt-10 sm:space-y-6">
           {STEPS.map((step, i) => (
-            <li key={step.title} className="rounded-2xl border bg-card p-5 shadow-sm">
+            <li key={step.title} className="rounded-2xl border bg-card p-4 shadow-sm sm:p-5">
               <div className="flex items-start gap-3">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
                   <step.icon className="h-4 w-4" />
@@ -122,7 +122,7 @@ export default function ConnectOutlookHelp() {
                   <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{step.body}</p>
                 </div>
               </div>
-              <div className="mt-4 sm:ml-12">{step.visual}</div>
+              <div className="mt-3 sm:ml-12 sm:mt-4">{step.visual}</div>
             </li>
           ))}
         </ol>

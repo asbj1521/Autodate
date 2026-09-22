@@ -694,7 +694,7 @@ export default function FindDate() {
             className="w-full lg:sticky lg:top-4 lg:w-[21rem] lg:shrink-0 xl:w-[23rem]"
           >
             {groups && activeGroupId && (
-              <div className="rounded-2xl border bg-card p-5 shadow-sm">
+              <div className="rounded-2xl border bg-card p-4 shadow-sm sm:p-5">
                 <span className="text-sm font-medium text-muted-foreground">
                   Scheduling for
                 </span>
@@ -825,7 +825,7 @@ export default function FindDate() {
           <main
             onPointerDownCapture={stopCarousel}
             onFocusCapture={stopCarousel}
-            className="min-w-0 flex-1 scroll-mt-4 rounded-2xl border bg-card p-5 shadow-xl shadow-black/5 sm:p-6"
+            className="min-w-0 flex-1 scroll-mt-4 rounded-2xl border bg-card p-4 shadow-xl shadow-black/5 sm:p-6"
           >
             {/* Card header: which group this is, and the two actions. Only a
                 label here — switching groups happens in the box to the
@@ -833,17 +833,17 @@ export default function FindDate() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
                 {activeGroup ? (
-                  <h2 className="truncate text-2xl font-bold text-foreground">
+                  <h2 className="truncate text-xl font-bold text-foreground sm:text-2xl">
                     {activeGroup.name}
                   </h2>
                 ) : (
                   <h2 className="text-2xl font-bold text-foreground">Loading…</h2>
                 )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
                 <button
                   onClick={handleCopy}
-                  className="inline-flex items-center gap-1.5 rounded-lg border bg-card px-3 py-2 text-sm font-medium text-foreground transition hover:bg-secondary"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border bg-card px-3 py-2 text-sm font-medium text-foreground transition hover:bg-secondary"
                 >
                   {copied ? (
                     <Check className="h-4 w-4 text-primary" />
@@ -854,7 +854,7 @@ export default function FindDate() {
                 </button>
                 <button
                   onClick={handleFindBest}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
                 >
                   <Sparkles className="h-4 w-4" />
                   Find best time
@@ -866,9 +866,29 @@ export default function FindDate() {
                 (nothing between the two), so there's never a question which
                 month is on screen. */}
             {monthGrid && (
-              <p className="mt-4 text-base font-semibold text-foreground">
-                {monthGrid.label}
-              </p>
+              <div className="mt-4 flex items-center justify-between gap-3">
+                <p className="text-base font-semibold text-foreground">{monthGrid.label}</p>
+                {/* On a phone the arrows sit here: the floating ones on the
+                    grid's edges would hang off the screen. */}
+                <div className="flex items-center gap-1.5 sm:hidden">
+                  <button
+                    onClick={() => pageMonth(-1)}
+                    disabled={viewMonth <= MIN_MONTH}
+                    aria-label="Previous month"
+                    className="flex h-9 w-9 items-center justify-center rounded-full border bg-card text-foreground transition hover:bg-secondary disabled:opacity-30"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+                  <button
+                    onClick={() => pageMonth(1)}
+                    disabled={viewMonth >= MAX_MONTH}
+                    aria-label="Next month"
+                    className="flex h-9 w-9 items-center justify-center rounded-full border bg-card text-foreground transition hover:bg-secondary disabled:opacity-30"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
             )}
 
             {/* Apple-style month calendar */}
@@ -923,7 +943,7 @@ export default function FindDate() {
                   onClick={() => pageMonth(-1)}
                   disabled={viewMonth <= MIN_MONTH}
                   aria-label="Previous month"
-                  className="absolute left-0 top-8 z-20 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border bg-card text-foreground shadow-md transition hover:bg-secondary disabled:pointer-events-none disabled:opacity-30"
+                  className="absolute left-0 top-8 z-20 hidden h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border bg-card text-foreground shadow-md transition hover:bg-secondary disabled:pointer-events-none disabled:opacity-30 sm:flex"
                 >
                   <ChevronLeft className="h-5 w-5" />
                 </button>
@@ -931,7 +951,7 @@ export default function FindDate() {
                   onClick={() => pageMonth(1)}
                   disabled={viewMonth >= MAX_MONTH}
                   aria-label="Next month"
-                  className="absolute right-0 top-8 z-20 flex h-9 w-9 translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border bg-card text-foreground shadow-md transition hover:bg-secondary disabled:pointer-events-none disabled:opacity-30"
+                  className="absolute right-0 top-8 z-20 hidden h-9 w-9 translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border bg-card text-foreground shadow-md transition hover:bg-secondary disabled:pointer-events-none disabled:opacity-30 sm:flex"
                 >
                   <ChevronRight className="h-5 w-5" />
                 </button>

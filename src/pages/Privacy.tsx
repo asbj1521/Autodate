@@ -24,8 +24,8 @@ export default function Privacy() {
   return (
     <div className="min-h-screen bg-background">
       <TopNav />
-      <main className="mx-auto max-w-2xl px-6 pb-20 pt-6">
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Privacy policy</h1>
+      <main className="mx-auto max-w-2xl px-4 pb-16 pt-4 sm:px-6 sm:pb-20 sm:pt-6">
+        <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">Privacy policy</h1>
         <p className="mt-2 text-sm text-muted-foreground">Last updated {UPDATED}</p>
 
         <Section title="In short">

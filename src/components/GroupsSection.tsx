@@ -89,8 +89,10 @@ function GroupRow({
 
   return (
     <li className="py-4">
-      <div className="flex items-start gap-3">
-        <div className="flex -space-x-2">
+      {/* On a phone the actions wrap onto their own line under the name, so
+          the name isn't squeezed down to a few letters. */}
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-3 sm:flex-nowrap">
+        <div className="flex shrink-0 -space-x-2">
           {group.members.slice(0, 4).map((m, i) => (
             <span
               key={m.profileId}
@@ -121,7 +123,7 @@ function GroupRow({
               onCancel={onCancelRename}
             />
           ) : (
-            <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-foreground">
+            <p className="flex min-w-0 items-center gap-1 text-sm font-semibold text-foreground">
               <span className="truncate">{group.name}</span>
               <button
                 type="button"
@@ -138,7 +140,7 @@ function GroupRow({
           </p>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
           <button
             type="button"
             onClick={onShareInvite}

@@ -88,14 +88,14 @@ export default function SignIn() {
     return (
       <div className="min-h-screen bg-background">
         <TopNav />
-        <main className="mx-auto max-w-sm px-6 pb-20 pt-10">
+        <main className="mx-auto max-w-sm px-4 pb-16 pt-6 sm:px-6 sm:pb-20 sm:pt-10">
           <h1 className="text-3xl font-bold tracking-tight text-foreground">
             Choose a new password
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
             You can sign in with this the next time, instead of an email link.
           </p>
-          <div className="mt-8 rounded-2xl border bg-card p-6 shadow-sm">
+          <div className="mt-6 rounded-2xl border bg-card p-5 shadow-sm sm:mt-8 sm:p-6">
             <PasswordForm
               submitting={recoverySubmitting}
               error={recoveryError}
@@ -204,13 +204,13 @@ export default function SignIn() {
     <div className="min-h-screen bg-background">
       <TopNav />
 
-      <main className="mx-auto max-w-sm px-6 pb-20 pt-10">
+      <main className="mx-auto max-w-sm px-4 pb-16 pt-6 sm:px-6 sm:pb-20 sm:pt-10">
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Sign in</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Sign in to connect your calendars and plan with your groups.
         </p>
 
-        <div className="mt-8 rounded-2xl border bg-card p-6 shadow-sm">
+        <div className="mt-6 rounded-2xl border bg-card p-5 shadow-sm sm:mt-8 sm:p-6">
           <button
             type="button"
             onClick={() => void handleGoogle()}

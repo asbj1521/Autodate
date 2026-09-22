@@ -1,6 +1,13 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarCheck, CalendarDays, CalendarSearch, User } from "lucide-react";
+import {
+  CalendarCheck,
+  CalendarDays,
+  CalendarSearch,
+  LogIn,
+  User,
+  type LucideIcon,
+} from "lucide-react";
 
 import { adminStatusQuery } from "@/api/admin";
 import { calendarStatusQuery } from "@/api/calendarStatus";
@@ -64,86 +71,96 @@ export default function TopNav() {
     void import("@/pages/CalendarOverview");
   };
 
+  // Signed out, the profile tab can only lead to the sign-in page, so on a
+  // phone (where there's no room for a separate Sign in link) it says so.
+  const signedOut = !loading && !user;
+
+  const tabs: Tab[] = [
+    // The logo also goes home, but that isn't obvious from Profile or My
+    // events, so it gets its own labelled link like the others.
+    { to: "/", label: "Scheduler", short: "Schedule", icon: CalendarSearch, active: onHome },
+    {
+      to: "/events",
+      label: "My events",
+      short: "Events",
+      icon: CalendarCheck,
+      active: onEvents,
+      prefetch: prefetchEvents,
+      badge: pendingCount,
+    },
+    {
+      to: "/calendar-overview",
+      label: "My calendar",
+      short: "Calendar",
+      icon: CalendarDays,
+      active: onCalendarOverview,
+      prefetch: prefetchCalendarOverview,
+    },
+    signedOut
+      ? {
+          // Through /profile, so signing in lands you on your profile.
+          to: "/profile",
+          label: "Profile",
+          short: "Sign in",
+          icon: LogIn,
+          active: pathname === "/sign-in",
+        }
+      : { to: "/profile", label: "Profile", short: "Profile", icon: User, active: onProfile, prefetch: prefetchProfile },
+  ];
+
   return (
     // Edge to edge on every page, with the same responsive gutter as the
     // full-width pages' content, so the logo and links sit in the same place
-    // wherever you are. (There used to be a narrower, centred variant; on a
-    // wide screen it pulled both ends inward and the bar jumped between pages.)
-    <nav className="flex items-center justify-between px-4 py-5 sm:px-6 lg:px-8">
+    // wherever you are.
+    <nav className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-5 lg:px-8">
       <Link to="/" className="flex items-center gap-2">
-        {/* The wordmark, sized to read as a logo rather than as another nav
-            link. It steps down on small screens: at 24px the name plus the
-            links is wider than a narrow phone, and the row would wrap. */}
         <span className="text-xl font-bold tracking-tight sm:text-2xl">casy</span>
       </Link>
-      <div className="flex items-center gap-5 text-sm text-muted-foreground sm:gap-6">
-        {/* The logo also goes home, but that isn't obvious from Profile or My
-            events, so it gets its own labelled link like the others. */}
-        <Link
-          to="/"
-          className={cn(
-            "flex items-center gap-1.5 transition hover:text-foreground",
-            onHome && "text-foreground",
-          )}
-        >
-          <CalendarSearch className="h-4 w-4" />
-          Scheduler
-        </Link>
-        <Link
-          to="/events"
-          onMouseEnter={prefetchEvents}
-          onFocus={prefetchEvents}
-          onTouchStart={prefetchEvents}
-          className={cn(
-            "flex items-center gap-1.5 transition hover:text-foreground",
-            onEvents && "text-foreground",
-          )}
-        >
-          <CalendarCheck className="h-4 w-4" />
-          My events
-          {pendingCount > 0 && (
-            <span
-              aria-label={`${pendingCount} waiting for your answer`}
-              className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground"
-            >
-              {pendingCount}
+      {/* On a phone each link is an icon over a one-word label, which is the
+          only way four of them fit beside the logo on a 360px screen. */}
+      <div className="flex items-center gap-1 text-muted-foreground sm:gap-6 sm:text-sm">
+        {tabs.map((tab) => (
+          <Link
+            key={tab.short}
+            to={tab.to}
+            onMouseEnter={tab.prefetch}
+            onFocus={tab.prefetch}
+            onTouchStart={tab.prefetch}
+            aria-current={tab.active ? "page" : undefined}
+            className={cn(
+              "flex min-w-14 flex-col items-center gap-0.5 rounded-lg px-1.5 py-1 text-[11px] font-medium transition hover:text-foreground sm:min-w-0 sm:flex-row sm:gap-1.5 sm:p-0 sm:text-sm sm:font-normal",
+              tab.active && "text-primary sm:text-foreground",
+            )}
+          >
+            <span className="relative">
+              <tab.icon className="h-5 w-5 sm:h-4 sm:w-4" />
+              {!!tab.badge && (
+                <span className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground sm:hidden">
+                  {tab.badge}
+                </span>
+              )}
             </span>
-          )}
-        </Link>
-        <Link
-          to="/calendar-overview"
-          onMouseEnter={prefetchCalendarOverview}
-          onFocus={prefetchCalendarOverview}
-          onTouchStart={prefetchCalendarOverview}
-          className={cn(
-            "flex items-center gap-1.5 transition hover:text-foreground",
-            onCalendarOverview && "text-foreground",
-          )}
-        >
-          <CalendarDays className="h-4 w-4" />
-          My calendar
-        </Link>
-        <Link
-          to="/profile"
-          onMouseEnter={prefetchProfile}
-          onFocus={prefetchProfile}
-          onTouchStart={prefetchProfile}
-          className={cn(
-            "flex items-center gap-1.5 transition hover:text-foreground",
-            onProfile && "text-foreground",
-          )}
-        >
-          <User className="h-4 w-4" />
-          Profile
-        </Link>
+            <span className="sm:hidden">{tab.short}</span>
+            <span className="hidden sm:inline">{tab.label}</span>
+            {!!tab.badge && (
+              <span
+                aria-label={`${tab.badge} waiting for your answer`}
+                className="hidden h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground sm:flex"
+              >
+                {tab.badge}
+              </span>
+            )}
+          </Link>
+        ))}
         {/* Nothing until the session is known, so it never flickers from
-            "Sign in" to "Sign out" on load. */}
+            "Sign in" to "Sign out" on load. On a phone, signing out lives on
+            the profile page instead. */}
         {!loading &&
           (user ? (
             <button
               type="button"
               onClick={() => void handleSignOut()}
-              className="transition hover:text-foreground"
+              className="hidden transition hover:text-foreground sm:block"
             >
               Sign out
             </button>
@@ -151,7 +168,7 @@ export default function TopNav() {
             <Link
               to="/sign-in"
               className={cn(
-                "transition hover:text-foreground",
+                "hidden transition hover:text-foreground sm:block",
                 pathname === "/sign-in" && "text-foreground",
               )}
             >
@@ -161,4 +178,15 @@ export default function TopNav() {
       </div>
     </nav>
   );
+}
+
+interface Tab {
+  to: string;
+  label: string;
+  /** The one-word label under the icon on a phone. */
+  short: string;
+  icon: LucideIcon;
+  active: boolean;
+  prefetch?: () => void;
+  badge?: number;
 }

@@ -1,11 +1,12 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CheckCircle2,
   Link2,
   Loader2,
+  LogOut,
   Pencil,
   RefreshCw,
   ShieldCheck,
@@ -115,7 +116,8 @@ const AdminPanel = lazy(() => import("@/components/AdminPanel"));
  * and show the outcome inline (Apple takes an app-specific password).
  */
 export default function Profile() {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
   const [passwordFormOpen, setPasswordFormOpen] = useState(false);
   const [passwordSubmitting, setPasswordSubmitting] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
@@ -467,7 +469,7 @@ export default function Profile() {
               type="button"
               onClick={toggleAdminMode}
               className={cn(
-                "flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition",
+                "flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold transition sm:text-sm",
                 adminMode
                   ? "border bg-background text-foreground hover:bg-secondary"
                   : "bg-foreground text-background hover:opacity-90",
@@ -553,7 +555,7 @@ export default function Profile() {
                   onCancel={() => setEditingName(false)}
                 />
               ) : (
-                <p className="flex flex-wrap items-baseline gap-x-2">
+                <p className="flex min-w-0 flex-col sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-2">
                   <span className="truncate text-xl font-bold leading-tight text-foreground">
                     {name}
                   </span>
@@ -565,20 +567,20 @@ export default function Profile() {
                 </p>
               )}
             </div>
-            <div className="flex shrink-0 flex-wrap items-center gap-2">
-              <div className="flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-xs font-medium text-muted-foreground">
+            <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:shrink-0 sm:flex-wrap sm:items-center">
+              <div className="flex items-center justify-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-xs font-medium text-muted-foreground">
                 <span className="text-sm font-bold text-foreground">
                   {groupsCount ?? "…"}
                 </span>
                 Groups
               </div>
-              <div className="flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-xs font-medium text-muted-foreground">
+              <div className="flex items-center justify-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-xs font-medium text-muted-foreground">
                 <span className="text-sm font-bold text-foreground">
                   {connectedCount ?? "…"}
                 </span>
                 Calendars
               </div>
-              <div className="flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-xs font-medium text-muted-foreground">
+              <div className="flex items-center justify-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-xs font-medium text-muted-foreground">
                 <span className="text-sm font-bold text-foreground">
                   {busyCount ?? "…"}
                 </span>
@@ -798,6 +800,18 @@ export default function Profile() {
             </section>
           </>
         )}
+
+        {/* The nav has no room for Sign out on a phone, so it lives here. */}
+        <button
+          type="button"
+          onClick={() => {
+            void signOut().then(() => navigate("/"));
+          }}
+          className="mt-8 flex w-full items-center justify-center gap-2 rounded-full border bg-background px-4 py-2.5 text-sm font-semibold text-foreground transition hover:bg-secondary sm:hidden"
+        >
+          <LogOut className="h-4 w-4" />
+          Sign out
+        </button>
       </main>
     </div>
   );

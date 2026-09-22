@@ -256,7 +256,7 @@ export default function ProviderCard({
         : "Connect";
 
   return (
-    <div className="rounded-2xl border bg-card p-5 shadow-sm">
+    <div className="rounded-2xl border bg-card p-4 shadow-sm sm:p-5">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <span
@@ -267,20 +267,26 @@ export default function ProviderCard({
           >
             {meta.icon}
           </span>
-          <h3 className="truncate font-semibold text-foreground">{meta.label}</h3>
-          {meta.help ? (
-            <Link
-              to={meta.help.to}
-              className="flex shrink-0 items-center gap-1.5 rounded-full border bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-            >
-              <HelpCircle className="h-3.5 w-3.5" />
-              {meta.help.label}
-            </Link>
-          ) : (
-            meta.description && (
-              <InfoTip label={`About ${meta.label}`}>{meta.description}</InfoTip>
-            )
-          )}
+          {/* On a phone the help link drops under the name as plain text, so
+              the name keeps enough room to be read in full. */}
+          <div className="flex min-w-0 flex-col sm:flex-row sm:items-center sm:gap-3">
+            <h3 className="font-semibold leading-tight text-foreground sm:truncate">
+              {meta.label}
+            </h3>
+            {meta.help ? (
+              <Link
+                to={meta.help.to}
+                className="mt-0.5 flex w-fit items-center gap-1 text-xs font-medium text-muted-foreground transition hover:text-foreground sm:mt-0 sm:shrink-0 sm:gap-1.5 sm:rounded-full sm:border sm:bg-background sm:px-2.5 sm:py-1 sm:hover:bg-secondary"
+              >
+                <HelpCircle className="h-3.5 w-3.5" />
+                {meta.help.label}
+              </Link>
+            ) : (
+              meta.description && (
+                <InfoTip label={`About ${meta.label}`}>{meta.description}</InfoTip>
+              )
+            )}
+          </div>
         </div>
 
         {statusPending ? (
@@ -304,7 +310,14 @@ export default function ProviderCard({
               className="flex shrink-0 items-center gap-2 rounded-full border bg-background px-3.5 py-1.5 text-sm font-semibold text-foreground transition hover:bg-secondary"
             >
               <CalendarPlus className="h-4 w-4" />
-              {buttonLabel}
+              {buttonLabel === "Add another" ? (
+                <>
+                  <span className="sm:hidden">Add</span>
+                  <span className="hidden sm:inline">Add another</span>
+                </>
+              ) : (
+                buttonLabel
+              )}
             </button>
           )
         )}

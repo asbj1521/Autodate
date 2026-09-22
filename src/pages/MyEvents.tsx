@@ -133,6 +133,9 @@ export default function MyEvents() {
   };
 
   const sections = events ? sectionEvents(events) : null;
+  // Cancelled events are left out of every section, so "no events" means
+  // nothing left to show, not an empty list from the server.
+  const nothingToShow = !!sections && Object.values(sections).every((list) => list.length === 0);
 
   function cancelControl(event: SuggestedEvent) {
     if (!event.createdBy.isYou) return null;
@@ -178,7 +181,7 @@ export default function MyEvents() {
   return (
     <div className="min-h-screen bg-background">
       <TopNav />
-      <main className="px-4 pb-16 sm:px-6 lg:px-8">
+      <main className="px-4 pb-16 pt-2 sm:px-6 sm:pt-0 lg:px-8">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">My events</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Events suggested in your groups. When someone declines, Casy finds the next date that
@@ -192,8 +195,8 @@ export default function MyEvents() {
           </p>
         ) : isError || !sections ? (
           <p className="mt-8 text-sm text-red-700">Couldn't load your events.</p>
-        ) : events.length === 0 ? (
-          <div className="mt-8 flex flex-col items-start rounded-2xl border bg-card p-6">
+        ) : nothingToShow ? (
+          <div className="mt-6 flex flex-col items-start rounded-2xl border bg-card p-5 sm:mt-8 sm:p-6">
             <CalendarCheck className="h-8 w-8 text-primary" />
             <p className="mt-3 font-semibold text-foreground">No events yet</p>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -227,7 +230,7 @@ export default function MyEvents() {
                     return (
                       <li
                         key={event.id}
-                        className="rounded-2xl border border-primary/30 bg-card p-5 shadow-sm"
+                        className="rounded-2xl border border-primary/30 bg-card p-4 shadow-sm sm:p-5"
                       >
                         <p className="text-xs font-medium uppercase tracking-wide text-primary">
                           {event.group.name} · {event.title}
