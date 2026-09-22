@@ -19,11 +19,16 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
 
   useEffect(() => {
     const { data } = supabase.auth.onAuthStateChange((event, next) => {
       setSession(next);
       setLoading(false);
+      // Fires when the browser lands on a password-reset link: it carries a
+      // real session, but the sign-in page needs to show a "new password"
+      // form rather than treating this as an ordinary login.
+      if (event === "PASSWORD_RECOVERY") setPasswordRecovery(true);
       // Cached answers belong to whoever asked for them. Dropping them on
       // sign-out means the next person on this browser never sees them.
       // The copies remembered on the device go with them.
@@ -40,11 +45,13 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       session,
       user: session?.user ?? null,
       loading,
+      passwordRecovery,
+      clearPasswordRecovery: () => setPasswordRecovery(false),
       signOut: async () => {
         await supabase.auth.signOut();
       },
     }),
-    [session, loading],
+    [session, loading, passwordRecovery],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

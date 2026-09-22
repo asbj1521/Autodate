@@ -247,10 +247,16 @@ admin_email = "noreply@casy.app"
 sender_name = "Casy"
 
 # The sign-in email itself. `enable_confirmations` is off and the app calls
-# signInWithOtp, so magic_link is the only template that is ever sent.
+# signInWithOtp, so magic_link is the only template sent for that flow.
 [auth.email.template.magic_link]
 subject = "Your Casy sign-in link"
 content_path = "./supabase/templates/magic_link.html"
+
+# Sent by resetPasswordForEmail when someone sets or forgets a password
+# (Profile's "Set or change your password" and Sign in's "Forgot password?").
+[auth.email.template.recovery]
+subject = "Reset your Casy password"
+content_path = "./supabase/templates/recovery.html"
 
 # Uncomment to customize email template
 # [auth.email.template.invite]

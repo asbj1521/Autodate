@@ -21,6 +21,7 @@ import GroupsSection, { type GroupConfirm } from "@/components/GroupsSection";
 import IcsLinkForm from "@/components/IcsLinkForm";
 import InlineTextEdit from "@/components/InlineTextEdit";
 import NewGroupDialog from "@/components/NewGroupDialog";
+import PasswordForm from "@/components/PasswordForm";
 import ProviderCard, { type ProviderMeta } from "@/components/ProviderCard";
 import StatTile from "@/components/StatTile";
 import TopNav from "@/components/TopNav";
@@ -28,6 +29,7 @@ import { displayName, useAuth } from "@/context/auth";
 import { plural } from "@/lib/accountSummary";
 import { avatarColor } from "@/lib/avatar";
 import { MAX_DISPLAY_NAME_LENGTH } from "@/lib/groups";
+import { supabase } from "@/lib/supabase";
 import {
   calendarStatusQuery,
   type CalendarConnectionStatus,
@@ -119,6 +121,10 @@ const AdminPanel = lazy(() => import("@/components/AdminPanel"));
  */
 export default function Profile() {
   const { user } = useAuth();
+  const [passwordFormOpen, setPasswordFormOpen] = useState(false);
+  const [passwordSubmitting, setPasswordSubmitting] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSaved, setPasswordSaved] = useState(false);
   const [appleFormOpen, setAppleFormOpen] = useState(false);
   const [appleSubmitting, setAppleSubmitting] = useState(false);
   // Bumped after each successful connect, to remount the form and drop the
@@ -346,6 +352,19 @@ export default function Profile() {
       setSyncResult({ ok: false, text: err instanceof Error ? err.message : "Couldn't sync" });
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handlePasswordSubmit = async (password: string) => {
+    setPasswordSubmitting(true);
+    setPasswordError(null);
+    const { error: err } = await supabase.auth.updateUser({ password });
+    setPasswordSubmitting(false);
+    if (err) {
+      setPasswordError(err.message);
+    } else {
+      setPasswordFormOpen(false);
+      setPasswordSaved(true);
     }
   };
 
@@ -744,6 +763,47 @@ export default function Profile() {
                     </ProviderCard>
                   );
                 })}
+              </div>
+            </section>
+
+            {/* Password: works alongside Google and the email link, never
+                replacing them. One form handles both setting a first
+                password and changing an existing one, since there is no
+                reliable way to tell from the client which case this is. */}
+            <section className="mt-8">
+              <h2 className="text-lg font-semibold text-foreground">Password</h2>
+              <div className="mt-4 rounded-2xl border bg-card p-5 shadow-sm sm:p-6">
+                {passwordSaved && !passwordFormOpen && (
+                  <p className="mb-3 flex items-center gap-2 text-sm text-emerald-800">
+                    <CheckCircle2 className="h-4 w-4 shrink-0" />
+                    Password saved. You can use it to sign in from now on.
+                  </p>
+                )}
+                {passwordFormOpen ? (
+                  <PasswordForm
+                    submitting={passwordSubmitting}
+                    error={passwordError}
+                    submitLabel="Save password"
+                    submittingLabel="Saving"
+                    onSubmit={(password) => void handlePasswordSubmit(password)}
+                    onCancel={() => {
+                      setPasswordFormOpen(false);
+                      setPasswordError(null);
+                    }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPasswordSaved(false);
+                      setPasswordError(null);
+                      setPasswordFormOpen(true);
+                    }}
+                    className="flex items-center gap-2 rounded-full border bg-background px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-secondary"
+                  >
+                    Set or change your password
+                  </button>
+                )}
               </div>
             </section>
           </>

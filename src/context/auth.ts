@@ -17,6 +17,15 @@ export interface AuthState {
    * for the split second before their session is known.
    */
   loading: boolean;
+  /**
+   * True once Supabase has signed someone in from a password-reset link. A
+   * recovery link creates a real session, so `user` is set at the same time
+   * as this flag; the sign-in page checks this first and shows a "choose a
+   * new password" form instead of forwarding them on like an ordinary login.
+   */
+  passwordRecovery: boolean;
+  /** Called once the new password has been saved, so the flag doesn't linger. */
+  clearPasswordRecovery: () => void;
   signOut: () => Promise<void>;
 }
 
