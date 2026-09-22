@@ -1,6 +1,6 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarCheck, User } from "lucide-react";
+import { CalendarCheck, CalendarDays, CalendarSearch, User } from "lucide-react";
 
 import { adminStatusQuery } from "@/api/admin";
 import { calendarStatusQuery } from "@/api/calendarStatus";
@@ -19,8 +19,10 @@ export default function TopNav() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { user, loading, signOut } = useAuth();
+  const onHome = pathname === "/";
   const onProfile = pathname === "/profile";
   const onEvents = pathname === "/events";
+  const onCalendarOverview = pathname === "/calendar-overview";
 
   // How many suggested events are waiting for your answer: the badge on My
   // events is how people find out something was suggested to them.
@@ -57,6 +59,11 @@ export default function TopNav() {
     void import("@/pages/MyEvents");
   };
 
+  const prefetchCalendarOverview = () => {
+    if (onCalendarOverview || !user) return;
+    void import("@/pages/CalendarOverview");
+  };
+
   return (
     // Edge to edge on every page, with the same responsive gutter as the
     // full-width pages' content, so the logo and links sit in the same place
@@ -70,6 +77,18 @@ export default function TopNav() {
         <span className="text-xl font-bold tracking-tight sm:text-2xl">casy</span>
       </Link>
       <div className="flex items-center gap-5 text-sm text-muted-foreground sm:gap-6">
+        {/* The logo also goes home, but that isn't obvious from Profile or My
+            events, so it gets its own labelled link like the others. */}
+        <Link
+          to="/"
+          className={cn(
+            "flex items-center gap-1.5 transition hover:text-foreground",
+            onHome && "text-foreground",
+          )}
+        >
+          <CalendarSearch className="h-4 w-4" />
+          Scheduler
+        </Link>
         <Link
           to="/events"
           onMouseEnter={prefetchEvents}
@@ -90,6 +109,19 @@ export default function TopNav() {
               {pendingCount}
             </span>
           )}
+        </Link>
+        <Link
+          to="/calendar-overview"
+          onMouseEnter={prefetchCalendarOverview}
+          onFocus={prefetchCalendarOverview}
+          onTouchStart={prefetchCalendarOverview}
+          className={cn(
+            "flex items-center gap-1.5 transition hover:text-foreground",
+            onCalendarOverview && "text-foreground",
+          )}
+        >
+          <CalendarDays className="h-4 w-4" />
+          My calendar
         </Link>
         <Link
           to="/profile"

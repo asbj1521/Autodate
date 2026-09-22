@@ -1,11 +1,9 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  CalendarDays,
   CheckCircle2,
-  ChevronLeft,
   Link2,
   Loader2,
   Pencil,
@@ -23,7 +21,6 @@ import InlineTextEdit from "@/components/InlineTextEdit";
 import NewGroupDialog from "@/components/NewGroupDialog";
 import PasswordForm from "@/components/PasswordForm";
 import ProviderCard, { type ProviderMeta } from "@/components/ProviderCard";
-import StatTile from "@/components/StatTile";
 import TopNav from "@/components/TopNav";
 import { displayName, useAuth } from "@/context/auth";
 import { plural } from "@/lib/accountSummary";
@@ -65,10 +62,29 @@ function attemptsFor(
 }
 
 /**
- * In the same order as the calendar overview's list. The descriptions are what
- * the card's (i) shows, so they can afford to be complete.
+ * The descriptions are what the card's (i) shows, so they can afford to be
+ * complete. Apple and the ICS link come first: they take a form to fill in,
+ * so putting them ahead of the one-click Google/Outlook cards keeps the grid
+ * from alternating between quick cards and ones that need typing.
  */
 const PROVIDERS: ProviderMeta[] = [
+  {
+    id: "apple",
+    label: "Apple iCloud Calendar",
+    icon: <SiApple className="h-4 w-4 text-neutral-800" />,
+    badgeClass: "bg-neutral-200",
+    description:
+      "Apple has no one-click sign-in for calendars. Generate an app-specific password for Casy at account.apple.com, then enter your Apple ID email and that password.",
+  },
+  {
+    id: "ics",
+    label: "Calendar link (ICS)",
+    // Not a company, so a generic link icon rather than a brand mark.
+    icon: <Link2 className="h-4 w-4 text-violet-700" />,
+    badgeClass: "bg-violet-100",
+    description:
+      "Paste a calendar feed link, for example your school timetable or an Outlook publish link. Only start and end times are kept; titles, places and attendees are removed before anything is stored. These show as Special on the calendar overview.",
+  },
   {
     id: "google",
     label: "Google Calendar",
@@ -86,23 +102,6 @@ const PROVIDERS: ProviderMeta[] = [
     badgeClass: "bg-sky-100",
     description:
       "Connect with one click via your Microsoft account. Casy only ever reads free and busy times, never event details.",
-  },
-  {
-    id: "apple",
-    label: "Apple iCloud Calendar",
-    icon: <SiApple className="h-4 w-4 text-neutral-800" />,
-    badgeClass: "bg-neutral-200",
-    description:
-      "Apple has no one-click sign-in for calendars. Generate an app-specific password for Casy at account.apple.com, then enter your Apple ID email and that password.",
-  },
-  {
-    id: "ics",
-    label: "Calendar link (ICS)",
-    // Not a company, so a generic link icon rather than a brand mark.
-    icon: <Link2 className="h-4 w-4 text-violet-700" />,
-    badgeClass: "bg-violet-100",
-    description:
-      "Paste a calendar feed link, for example your school timetable or an Outlook publish link. Only start and end times are kept; titles, places and attendees are removed before anything is stored. These show as Special on the calendar overview.",
   },
 ];
 
@@ -370,6 +369,17 @@ export default function Profile() {
 
   const hasConnected = connections?.some((c) => c.status === "connected") ?? false;
 
+  // The compact counts shown beside the name: how much Casy is actually doing
+  // for this person, at a glance.
+  const groupsCount = groupsPending ? null : (groups?.length ?? 0);
+  const connectedCount = statusPending
+    ? null
+    : (connections?.filter((c) => c.status === "connected").length ?? 0);
+  const busyCount = statusPending
+    ? null
+    : (connections?.filter((c) => c.status === "connected").reduce((sum, c) => sum + c.busyCount, 0) ??
+      0);
+
   const handleIcsSubmit = async (url: string, name: string) => {
     setIcsSubmitting(true);
     setIcsError(null);
@@ -452,13 +462,26 @@ export default function Profile() {
       <TopNav />
 
       <main className="px-4 pb-20 pt-4 sm:px-6 lg:px-8">
-        <Link
-          to="/"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground transition hover:text-foreground"
-        >
-          <ChevronLeft className="h-4 w-4" />
-          Back to scheduling
-        </Link>
+        {/* Admin mode's entry point: centred on its own line, in the spot the
+            "Back to scheduling" link used to occupy (the header nav now has
+            its own link back, so that one was dropped). */}
+        {isAdmin && (
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={toggleAdminMode}
+              className={cn(
+                "flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition",
+                adminMode
+                  ? "border bg-background text-foreground hover:bg-secondary"
+                  : "bg-foreground text-background hover:opacity-90",
+              )}
+            >
+              <ShieldCheck className="h-4 w-4" />
+              {adminMode ? "Exit admin mode" : "SWITCH TO ADMIN MODE"}
+            </button>
+          </div>
+        )}
 
         {/* Result of a just-completed OAuth round trip, if any */}
         <AnimatePresence initial={false}>
@@ -495,10 +518,10 @@ export default function Profile() {
           </div>
         )}
 
-        {/* Who this is, plus a stat strip: three numbers that say at a glance
-            how much Casy is actually doing for this person. The overview
-            button lives here so the section below can spend its space on the
-            calendars themselves. */}
+        {/* Who this is, plus a compact stat strip beside the name: three
+            numbers that say at a glance how much Casy is actually doing for
+            this person. Admin mode and the calendar overview each have their
+            own link elsewhere now, so this card is just identity and counts. */}
         <div className="mt-5 rounded-2xl border bg-card p-5 shadow-sm sm:p-6">
           <div className="flex flex-wrap items-center gap-4">
             <button
@@ -547,54 +570,25 @@ export default function Profile() {
               )}
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2">
-              {isAdmin && (
-                <button
-                  type="button"
-                  onClick={toggleAdminMode}
-                  className={cn(
-                    "flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition",
-                    adminMode
-                      ? "border bg-background text-foreground hover:bg-secondary"
-                      : "bg-foreground text-background hover:opacity-90",
-                  )}
-                >
-                  <ShieldCheck className="h-4 w-4" />
-                  {adminMode ? "Exit admin mode" : "SWITCH TO ADMIN MODE"}
-                </button>
-              )}
-              <Link
-                to="/calendar-overview"
-                className="flex items-center gap-2 rounded-full border bg-background px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-secondary"
-              >
-                <CalendarDays className="h-4 w-4" />
-                Calendar overview
-              </Link>
+              <div className="flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-xs font-medium text-muted-foreground">
+                <span className="text-sm font-bold text-foreground">
+                  {groupsCount ?? "…"}
+                </span>
+                Groups
+              </div>
+              <div className="flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-xs font-medium text-muted-foreground">
+                <span className="text-sm font-bold text-foreground">
+                  {connectedCount ?? "…"}
+                </span>
+                Calendars
+              </div>
+              <div className="flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-xs font-medium text-muted-foreground">
+                <span className="text-sm font-bold text-foreground">
+                  {busyCount ?? "…"}
+                </span>
+                Busy blocks
+              </div>
             </div>
-          </div>
-
-          <div className="mt-5 grid grid-cols-3 gap-3 border-t pt-5">
-            <StatTile
-              label="Groups"
-              value={groupsPending ? null : (groups?.length ?? 0)}
-            />
-            <StatTile
-              label="Calendars connected"
-              value={
-                statusPending
-                  ? null
-                  : (connections?.filter((c) => c.status === "connected").length ?? 0)
-              }
-            />
-            <StatTile
-              label="Busy blocks tracked"
-              value={
-                statusPending
-                  ? null
-                  : (connections
-                      ?.filter((c) => c.status === "connected")
-                      .reduce((sum, c) => sum + c.busyCount, 0) ?? 0)
-              }
-            />
           </div>
         </div>
 
