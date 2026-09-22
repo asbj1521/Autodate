@@ -61,7 +61,15 @@ describe("sectionEvents", () => {
 
     const s = sectionEvents([later, past, cancelled, soon, noDate], NOW);
     expect(s.scheduled.map((e) => e.id)).toEqual(["soon", "later"]);
-    expect(s.closed.map((e) => e.id).sort()).toEqual(["cancelled", "nodate", "past"]);
+    expect(s.closed.map((e) => e.id).sort()).toEqual(["nodate", "past"]);
+  });
+
+  it("drops a cancelled event entirely rather than filing it under closed", () => {
+    const s = sectionEvents([event({ id: "gone", status: "cancelled" })], NOW);
+    expect(s.needsAnswer).toEqual([]);
+    expect(s.waiting).toEqual([]);
+    expect(s.scheduled).toEqual([]);
+    expect(s.closed).toEqual([]);
   });
 
   it("treats a pending event whose date has passed as closed", () => {

@@ -396,13 +396,11 @@ export default function MyEvents() {
                           {event.group.name} · {event.title}
                         </p>
                         <p className="text-muted-foreground">
-                          {event.status === "cancelled"
-                            ? `Cancelled by ${event.createdBy.isYou ? "you" : event.createdBy.name}.`
-                            : event.status === "no_date"
-                              ? "No date in the next year works for everyone any more. Suggest it again from the scheduling page."
-                              : event.status === "scheduled"
-                                ? `Happened: ${eventDateLabel(event)}.`
-                                : `The date passed before everyone answered: ${eventDateLabel(event)}.`}
+                          {event.status === "no_date"
+                            ? "No date in the next year works for everyone any more. Suggest it again from the scheduling page."
+                            : event.status === "scheduled"
+                              ? `Happened: ${eventDateLabel(event)}.`
+                              : `The date passed before everyone answered: ${eventDateLabel(event)}.`}
                         </p>
                       </div>
                     </li>

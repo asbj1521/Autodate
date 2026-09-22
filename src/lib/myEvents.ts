@@ -13,7 +13,7 @@ export interface EventSections {
   waiting: SuggestedEvent[];
   /** Everyone accepted, and the date hasn't passed. */
   scheduled: SuggestedEvent[];
-  /** Past, cancelled, or no date left. */
+  /** Past, or no date left. Cancelled events aren't kept anywhere. */
   closed: SuggestedEvent[];
 }
 
@@ -23,6 +23,9 @@ const startOf = (e: SuggestedEvent) =>
 export function sectionEvents(events: SuggestedEvent[], now = Date.now()): EventSections {
   const sections: EventSections = { needsAnswer: [], waiting: [], scheduled: [], closed: [] };
   for (const e of events) {
+    // A cancelled event has nothing left to act on or learn from, so it's
+    // dropped rather than filed away to look at later.
+    if (e.status === "cancelled") continue;
     const over = e.currentDate !== null && Date.parse(e.currentDate.end) <= now;
     if (e.status === "scheduled" && !over) sections.scheduled.push(e);
     else if (e.status === "pending" && !over) {
