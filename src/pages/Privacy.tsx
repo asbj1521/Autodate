@@ -8,7 +8,7 @@ import TopNav from "@/components/TopNav";
  * stored or who can see it changes.
  */
 
-const UPDATED = "21 September 2026";
+const UPDATED = "22 September 2026";
 const CONTACT_EMAIL = "asbjornbay@gmail.com";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -63,6 +63,11 @@ export default function Privacy() {
               links are stored as a fingerprint that cannot be turned back into a working link.
             </li>
             <li>
+              <span className="font-medium text-foreground">Suggested events:</span> events
+              suggested in your groups: what kind of event it is, the dates offered, who suggested
+              it, and who accepted or declined each date.
+            </li>
+            <li>
               <span className="font-medium text-foreground">Access credentials:</span> what is needed
               to keep your calendars up to date: access tokens from Google or Microsoft, an iCloud
               app-specific password, or a calendar link. These are encrypted before they are stored,
@@ -100,9 +105,9 @@ export default function Privacy() {
             Members do not see your email address, the names of your calendars, which accounts you
             connected, or what any of your events are called. Casy never stores event titles at
             all, so there is nothing there to reveal. One exception to keep in mind: if you signed
-            in with an email link, the name members see is the part of your email address before
-            the @ (for example "anna.jensen" for anna.jensen@example.com). The rest of the address
-            is never shown.
+            in with an email link and have not chosen a name on your profile, the name members see is
+            the part of your email address before the @ (for example "anna.jensen" for
+            anna.jensen@example.com). The rest of the address is never shown.
           </p>
           <p>
             Anyone holding a group&apos;s invite link can see the group&apos;s name and how many
@@ -110,6 +115,11 @@ export default function Privacy() {
             link like an address you would only send to people you want in the group. Leaving a
             group stops the other members seeing anything about you from then on. The person who
             made a group can delete it, which removes it for every member at once.
+          </p>
+          <p>
+            When someone suggests an event, everyone in the group sees it, the date on offer, and
+            who has accepted or declined. If you decline, the others see that you could not make
+            that date, and Casy offers the next date that works instead.
           </p>
         </Section>
 

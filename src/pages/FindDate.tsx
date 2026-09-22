@@ -12,11 +12,13 @@ import {
   Copy,
   Hourglass,
   Lightbulb,
-  Plus,
+  Loader2,
+  Send,
   Sparkles,
   Tag,
 } from "lucide-react";
 
+import { eventsQueryKey, suggestEvent } from "@/api/events";
 import {
   createGroup,
   createInvite,
@@ -31,19 +33,16 @@ import {
   SEARCH_WINDOW,
 } from "@/api/mockData";
 import {
-  findBestDaySpan,
-  findEarliestSlot,
   findVacationSuggestions,
-  findWeeklySpan,
   type MultiDayResult,
   type VacationSuggestion,
   type WeeklySpanShape,
 } from "@/lib/availability";
+import { findEventSlot, type EventSettings } from "@/lib/eventSearch";
 import { buildMonthGrid } from "@/lib/heatmap";
 import { useSchedulingGroups } from "@/hooks/useSchedulingGroups";
 import { useAuth } from "@/context/auth";
 import { formatDaySpan, formatSlot, formatTime, formatTripSpan } from "@/lib/format";
-import type { SchedulingResult } from "@/types";
 import { avatarColor } from "@/lib/avatar";
 import { ACCENT_RGB, AMBER_RGB } from "@/lib/colors";
 import { dayOf, monthStartMs } from "@/lib/day";
@@ -243,7 +242,6 @@ export default function FindDate() {
   const [slideDir, setSlideDir] = useState(1);
   // Bumped by the Find buttons to ask the calendar to page to the new result.
   const [revealRequest, setRevealRequest] = useState(0);
-  const cardRef = useRef<HTMLDivElement>(null);
   const copiedTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Don't leave the "Copied!" timer running after the page goes away.
@@ -296,6 +294,13 @@ export default function FindDate() {
   });
 
   const inviteMutation = useMutation({ mutationFn: createInvite });
+
+  // Suggesting the date on screen to the group. The answer is the fresh list
+  // of events, which goes straight into the cache the header badge reads.
+  const suggestMutation = useMutation({
+    mutationFn: suggestEvent,
+    onSuccess: (data) => queryClient.setQueryData(eventsQueryKey(user?.id ?? ""), data.events),
+  });
 
   const leaveMutation = useMutation({
     mutationFn: leaveGroup,
@@ -385,47 +390,35 @@ export default function FindDate() {
     tripShape,
   ]);
 
-  // The earliest slot the whole group can actually meet, recomputed
-  // automatically whenever the group, duration, start time, or search anchor
-  // changes — so the front page always shows a real, calendar-derived time
-  // without anyone having to press a button.
-  const result = useMemo<SchedulingResult | null>(() => {
-    if (!event || isMultiDay) return null;
-    const searchStart = searchFrom ?? SEARCH_BASE;
-    return findEarliestSlot({ ...event, searchStart });
-  }, [event, searchFrom, isMultiDay]);
+  // What is being searched for, as data. The same settings travel with a
+  // suggested event, so a decline re-runs exactly this search (eventSearch.ts).
+  const settings = useMemo<EventSettings | null>(() => {
+    if (eventType.kind === "vacation") return { kind: "vacation", days };
+    if (eventType.kind === "trip") return tripShape ? { kind: "trip", shape: tripShape } : null;
+    return {
+      kind: "single",
+      durationMinutes,
+      startHour,
+      allowedDays: selectedDows.length < 7 ? selectedDows : undefined,
+    };
+  }, [eventType, days, tripShape, durationMinutes, startHour, selectedDows]);
 
-  // Multi-day events search whole days (vacation) or weekly windows (trip)
-  // instead, with work/school surfacing as conflicts to review rather than
-  // blocking outright.
-  const runMultiSearch = (searchStart: string): MultiDayResult | null => {
-    if (!activeGroup) return null;
-    if (eventType.kind === "vacation") {
-      return findBestDaySpan(
-        activeGroup.participants,
-        days,
-        searchStart,
-        SEARCH_WINDOW.end,
-        TZ,
-      );
-    }
-    if (eventType.kind === "trip" && tripShape) {
-      return findWeeklySpan(
-        activeGroup.participants,
-        tripShape,
-        searchStart,
-        SEARCH_WINDOW.end,
-        TZ,
-      );
-    }
-    return null;
-  };
-
-  const multiResult = useMemo<MultiDayResult | null>(() => {
-    if (!isMultiDay) return null;
-    return runMultiSearch(searchFrom ?? SEARCH_BASE);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMultiDay, activeGroup, eventType, days, tripShape, searchFrom]);
+  // The search itself: single meetings need the whole group free at that
+  // hour; multi-day spans let work/school through as conflicts to review.
+  // Cheap and pure, so it simply follows the settings; what's shown is gated
+  // on hasSearched below.
+  const found = useMemo<MultiDayResult | null>(() => {
+    if (!activeGroup || !settings) return null;
+    return findEventSlot(
+      activeGroup.participants,
+      settings,
+      searchFrom ?? SEARCH_BASE,
+      SEARCH_WINDOW.end,
+      TZ,
+    );
+  }, [activeGroup, settings, searchFrom]);
+  const result = isMultiDay ? null : found;
+  const multiResult = isMultiDay ? found : null;
 
   // Workarounds for vacations that don't work cleanly: "6 days works for
   // everyone if you leave after work Friday" and the like.
@@ -616,8 +609,15 @@ export default function FindDate() {
     setRevealRequest((n) => n + 1);
   }
 
-  function handleCreateEvent() {
-    cardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  /** Suggest the date on screen to everyone in the group. */
+  function handleSuggest() {
+    if (!activeGroup || !activeSlot || !settings) return;
+    suggestMutation.mutate({
+      groupId: activeGroup.id,
+      title: eventType.label,
+      settings,
+      date: { start: activeSlot.start, end: activeSlot.end },
+    });
   }
 
   function handleCopy() {
@@ -643,6 +643,19 @@ export default function FindDate() {
         ? formatTripSpan(activeSlot.start, activeSlot.end)
         : formatSlot(activeSlot.start, activeSlot.end)
     : null;
+
+  // Suggesting needs a signed-in person, a real group, and a date to suggest.
+  const canSuggest = !!user && !!activeGroup && !activeGroup.isExample && !!activeSlot && !!settings;
+  // Success and errors belong to the exact date they were for: switch group,
+  // step to another date or change a setting, and they stop showing.
+  const suggestedFor = suggestMutation.variables;
+  const suggestIsForThis =
+    !!suggestedFor &&
+    suggestedFor.groupId === activeGroup?.id &&
+    suggestedFor.date.start === activeSlot?.start;
+  const suggestedThis = suggestIsForThis && suggestMutation.isSuccess;
+  const suggestError =
+    suggestIsForThis && suggestMutation.isError ? suggestMutation.error.message : null;
 
   // Conflict review state for multi-day spans. Your own work/school conflicts
   // need your explicit approval; other people's put the dates under review.
@@ -743,14 +756,49 @@ export default function FindDate() {
                   )}
                 </div>
 
+                {/* Suggest the date that was found: it goes to everyone in
+                    the group, who accept or decline it on My events. Only
+                    once there is a date, and only for a real group. */}
                 <button
-                  onClick={handleCreateEvent}
-                  disabled={!event}
+                  onClick={handleSuggest}
+                  disabled={!canSuggest || suggestMutation.isPending || suggestedThis}
                   className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-primary px-7 py-3 font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition hover:opacity-90 disabled:opacity-60"
                 >
-                  <Plus className="h-5 w-5" />
-                  Create event
+                  {suggestMutation.isPending ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : suggestedThis ? (
+                    <Check className="h-5 w-5" />
+                  ) : (
+                    <Send className="h-5 w-5" />
+                  )}
+                  {suggestedThis ? "Suggested" : "Suggest event"}
                 </button>
+                <p className="mt-2 text-center text-xs text-muted-foreground">
+                  {suggestedThis ? (
+                    <>
+                      Sent to the group.{" "}
+                      <Link
+                        to="/events"
+                        className="font-medium text-foreground underline underline-offset-2"
+                      >
+                        Follow the answers in My events
+                      </Link>
+                      .
+                    </>
+                  ) : suggestError ? (
+                    <span className="text-red-700">{suggestError}</span>
+                  ) : !user ? (
+                    "Sign in and make a group to suggest events."
+                  ) : activeGroup?.isExample ? (
+                    "Make a group to suggest events to real people."
+                  ) : !activeSlot ? (
+                    hasSearched
+                      ? "No date to suggest with these settings. Try changing them."
+                      : "Press Find best time, then suggest the date to your group."
+                  ) : (
+                    "Everyone in the group gets it to accept or decline."
+                  )}
+                </p>
               </div>
             )}
 
@@ -776,7 +824,6 @@ export default function FindDate() {
 
           {/* ───────── The calendar itself ───────── */}
           <main
-            ref={cardRef}
             onPointerDownCapture={stopCarousel}
             onFocusCapture={stopCarousel}
             className="min-w-0 flex-1 scroll-mt-4 rounded-2xl border bg-card p-5 shadow-xl shadow-black/5 sm:p-6"

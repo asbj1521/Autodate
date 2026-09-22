@@ -442,6 +442,11 @@ verify_jwt = false
 # to join before signing in; the link itself is what proves they were sent it.
 verify_jwt = false
 
+[functions.events]
+# Checks the caller's login in code (_shared/auth.ts) and only ever acts on
+# events in groups they are a member of and were invited to.
+verify_jwt = false
+
 [functions.admin]
 # Checks the caller's login in code (_shared/auth.ts), then that they are
 # listed in the ADMIN_USER_IDS secret (_shared/admin.ts); everyone else gets a

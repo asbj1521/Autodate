@@ -20,7 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Casy Users sign in, link their calendars (Google, Outlook, Apple iCloud, or any ICS link), and the app finds the earliest shared free window in their busy times.
 
-**Current state:** everything a signed-in user touches is real: their calendars (stored in Supabase, re-synced hourly), friend groups with invite links (`/join/:token`), and group availability built from every member's real busy times. Someone with no groups yet sees ten generated example groups (`src/api/mockData.ts`), each labelled "Example", with their own real calendar swapped into the "you" slot. The profile page lists your groups (leave any, delete ones you created) and, for admins only, opens admin mode.
+**Current state:** everything a signed-in user touches is real: their calendars (stored in Supabase, re-synced hourly), friend groups with invite links (`/join/:token`), and group availability built from every member's real busy times. Someone with no groups yet sees ten generated example groups (`src/api/mockData.ts`), each labelled "Example", with their own real calendar swapped into the "you" slot. The profile page lists your groups (make one, rename, share an invite link, leave, delete ones you created), lets you set your own display name, and, for admins only, opens admin mode. "Find best time" only searches when pressed; "Suggest event" sends the found date to the group, who accept or decline it on My events (`/events`), and a decline swaps in the next date automatically.
 
 ## Tech Stack
 
@@ -56,12 +56,12 @@ supabase db push --dry-run
 ### Directory structure
 ```
 src/
-├── api/          # Server data: groups, calendarStatus, admin (queries + calls); mockData (example groups), currentUser
+├── api/          # Server data: groups, events, calendarStatus, admin (queries + calls); mockData (example groups), currentUser
 ├── components/   # Hand-built UI components; RequireAuth guards signed-in routes; AdminPanel is lazy-loaded
 ├── context/      # Auth: AuthProvider (session) + auth.ts (useAuth, displayName)
 ├── hooks/        # useSchedulingGroups (real vs example groups), useExampleCarousel
 ├── lib/          # Pure logic + clients (see below); tests sit next to the code
-├── pages/        # FindDate (/), SignIn, Profile, CalendarOverview, JoinGroup (/join/:token), Privacy
+├── pages/        # FindDate (/), MyEvents (/events), SignIn, Profile, CalendarOverview, JoinGroup (/join/:token), Privacy, HowItWorks
 └── types/        # Core data model (BusyInterval, Participant, Event, ...)
 supabase/
 ├── functions/    # One folder per Edge Function; _shared/ holds provider adapters and helpers
@@ -73,6 +73,7 @@ supabase/
 - `src/lib/zone.ts`: all local-time arithmetic (local midnight, clock hours, weekdays, months) via Intl. Days are local midnight to local midnight, so DST days are 23/25 hours. The engine, heatmap and calendar take a **required** `timeZone`; the app uses `APP_TIME_ZONE` (Europe/Copenhagen). Busy blocks are always UTC instants. Never step days by adding 86 400 000 ms.
 - `src/lib/heatmap.ts`: the month grid tinted by how many people are free.
 - `src/lib/realCalendar.ts`: maps the user's stored blocks into the engine's shape (calendar purpose work/school -> category) and swaps them into an example group's "you" slot.
+- `src/lib/eventSearch.ts`: `findEventSlot(participants, settings, …)`, the one search both the scheduling page and a decline run. A suggested event stores its `EventSettings`, so the replacement date is found by exactly the same rules as the first. `supabase/functions/_shared/events.ts` repeats the settings validation for the server (Edge Functions can't import from `src/`).
 - `src/hooks/useSchedulingGroups.ts`: which groups the scheduling page searches. Real groups carry every member's busy time; a member with no calendar is left out of the search and named in `waitingFor` rather than counted as free. With no real groups, the labelled examples cycle instead. Only the group on screen is fetched.
 - `src/lib/queryPersistence.ts`: remembers only the `groups`, `calendar-status`, `admin-status` and `whoami` queries in localStorage (keys include the user id, wiped on sign-out, dropped after 7 days), so reloads show them at once and refresh in the background. Only ever add queries about the signed-in user themself: never other people's busy times or the admin overview.
 - `src/lib/adminOverview.ts`: patches the admin overview after an action so the row disappears at once, while the real overview refetches in the background.
@@ -84,13 +85,15 @@ supabase/
 - Every Edge Function identifies the caller with `callerId()` or `callerUser()` (`_shared/auth.ts`), which verifies the `Authorization: Bearer <access token>` with Supabase Auth. Never take a user id from a request body or query string. `verify_jwt = false` in `supabase/config.toml` is intentional: the publishable key is not a JWT, so functions check the login in code.
 - OAuth connect: the page POSTs to `oauth-<provider>-start` (signed in) and gets the consent URL back; the verified user id and the site the request came from (`Origin`) travel to the callback inside the HMAC-signed `state` (`_shared/state.ts`). The callback returns there only if it is in `FRONTEND_ORIGINS` (`_shared/frontend.ts`), otherwise to the first entry.
 - `calendar_connections.profile_id` is a uuid referencing `auth.users` (cascading deletes).
-- The `groups` function handles every group action, picked by `action` in the POST body: list, create, invite, preview, join, leave, delete (creator only), busy. `preview` is the only one that works signed out (an invite link shows the group's name and size); every other action checks membership. Members see each other's names and busy ranges, never emails, calendar names or event titles.
+- The `groups` function handles every group action, picked by `action` in the POST body: list, create, rename (any member), invite, preview, join, leave, delete (creator only), busy, whoami, set-name. `preview` is the only one that works signed out (an invite link shows the group's name and size); every other action checks membership. Members see each other's names and busy ranges, never emails, calendar names or event titles.
+- The `events` function handles suggested events: list, suggest, respond (accept, or decline with the next date attached), cancel (suggester only). The next date is found in the decliner's browser (it already has the group's calendars) and checked by the server: a valid future date after the declined one.
 - Admin mode: the `admin` function treats the user ids in the `ADMIN_USER_IDS` secret as admins (`_shared/admin.ts`) and re-checks it on every action; `status` only answers yes or no. The profile's admin button is a convenience, the function is the lock. Admin views show names, dates, counts and sync health; never emails (a Google or Outlook connection's `account_label` is an email), busy times or event details.
 
 ### Data model
 - Calendars: `calendar_connections` (one per linked account) -> `calendar_sources` (one per calendar, with a user-set `purpose`) -> `calendar_busy_cache` (start/end only; **no event titles are ever stored**). Credentials live in `calendar_secrets`.
-- Groups: `friend_groups` (named so because GROUPS is a Postgres keyword; `created_by` is set null if the creator's account goes) -> `group_members` (a trigger caps groups at 20 members and each person at 20 groups) and `group_invites` (only an HMAC of the invite token is stored; links last 7 days and anyone holding one can join). `profiles` holds each user's display name, copied from their own login by the `groups` function; it deliberately has no email.
-- `leave_friend_group()` removes a member and deletes the group if they were the last one. Deleting an account cascades everything it owns; the admin delete also removes groups it leaves empty.
+- Groups: `friend_groups` (named so because GROUPS is a Postgres keyword; `created_by` is set null if the creator's account goes) -> `group_members` (a trigger caps groups at 20 members and each person at 20 groups) and `group_invites` (only an HMAC of the invite token is stored; links last 7 days and anyone holding one can join). `profiles` holds each user's display name, copied from their own login by the `groups` function (`remember_login_name()`) unless `name_is_custom` says they chose one; it deliberately has no email.
+- Events: `event_proposals` (group, suggester, title, the search `settings` as jsonb, status pending / scheduled / no_date / cancelled; max 20 pending per group) -> `event_proposal_dates` (every date offered; the current one is the newest not declined) and `event_invitees` (everyone in the group when it was suggested). `event_responses` are per date, so a new date starts with no answers. `suggest_event()` and `respond_to_event()` do the writes in one transaction; `respond_to_event()` locks the event and answers `stale` if someone else changed the date first.
+- `leave_friend_group()` removes a member and deletes the group if they were the last one; it also drops them from the group's pending events (which may then become scheduled). Deleting an account cascades everything it owns; the admin delete also removes groups it leaves empty.
 
 ### Secrets
 - Every credential in `calendar_secrets` is encrypted with `_shared/secretBox.ts` (AES-256-GCM, format `v1:<nonce>:<ciphertext>`); a check constraint rejects anything else. The key is the `CALDAV_ENCRYPTION_KEY` function secret (the name is historical; it protects all secrets).

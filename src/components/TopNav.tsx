@@ -1,9 +1,10 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
-import { User } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { CalendarCheck, User } from "lucide-react";
 
 import { adminStatusQuery } from "@/api/admin";
 import { calendarStatusQuery } from "@/api/calendarStatus";
+import { eventsQuery, needsYourAnswer } from "@/api/events";
 import { groupsQuery } from "@/api/groups";
 import { useAuth } from "@/context/auth";
 import { cn } from "@/lib/utils";
@@ -19,6 +20,12 @@ export default function TopNav() {
   const navigate = useNavigate();
   const { user, loading, signOut } = useAuth();
   const onProfile = pathname === "/profile";
+  const onEvents = pathname === "/events";
+
+  // How many suggested events are waiting for your answer: the badge on My
+  // events is how people find out something was suggested to them.
+  const { data: events } = useQuery({ ...eventsQuery(user?.id ?? ""), enabled: !!user });
+  const pendingCount = events?.filter(needsYourAnswer).length ?? 0;
 
   async function handleSignOut() {
     await signOut();
@@ -45,6 +52,11 @@ export default function TopNav() {
     void queryClient.prefetchQuery(adminStatusQuery(user.id));
   };
 
+  const prefetchEvents = () => {
+    if (onEvents || !user) return;
+    void import("@/pages/MyEvents");
+  };
+
   return (
     // Edge to edge on every page, with the same responsive gutter as the
     // full-width pages' content, so the logo and links sit in the same place
@@ -57,7 +69,28 @@ export default function TopNav() {
             links is wider than a narrow phone, and the row would wrap. */}
         <span className="text-xl font-bold tracking-tight sm:text-2xl">casy</span>
       </Link>
-      <div className="flex items-center gap-6 text-sm text-muted-foreground">
+      <div className="flex items-center gap-5 text-sm text-muted-foreground sm:gap-6">
+        <Link
+          to="/events"
+          onMouseEnter={prefetchEvents}
+          onFocus={prefetchEvents}
+          onTouchStart={prefetchEvents}
+          className={cn(
+            "flex items-center gap-1.5 transition hover:text-foreground",
+            onEvents && "text-foreground",
+          )}
+        >
+          <CalendarCheck className="h-4 w-4" />
+          My events
+          {pendingCount > 0 && (
+            <span
+              aria-label={`${pendingCount} waiting for your answer`}
+              className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground"
+            >
+              {pendingCount}
+            </span>
+          )}
+        </Link>
         <Link
           to="/profile"
           onMouseEnter={prefetchProfile}
