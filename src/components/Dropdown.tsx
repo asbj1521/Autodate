@@ -25,7 +25,7 @@ export default function Dropdown({
   return (
     <Popover
       className="inline-block"
-      triggerClassName="inline-flex items-center gap-1.5 rounded-lg border bg-card px-2.5 py-1.5 text-sm font-medium text-foreground transition hover:bg-secondary"
+      triggerClassName="inline-flex items-center gap-1 rounded-lg border bg-card px-2 py-1.5 text-sm font-medium text-foreground transition hover:bg-secondary"
       panelClassName={menuWidth}
       trigger={(open) => (
         <>

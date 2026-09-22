@@ -10,7 +10,8 @@
  *   - findEarliestSlot     a single meeting at a precise time of day
  *   - findEarliestDaySpan  N whole days, the first place they fit
  *   - findBestDaySpan      N whole days, the best-scoring place (vacations)
- *   - findWeeklySpan       a weekday-anchored window (weekend trips)
+ *   - findWeeklySpan       a weekday-anchored window, best-scoring occurrence
+ *                          (weekend trips)
  * plus findVacationSuggestions, which proposes workarounds when the requested
  * vacation length doesn't work cleanly.
  *
@@ -589,11 +590,15 @@ export interface WeeklySpanShape {
 }
 
 /**
- * Find the earliest occurrence of a weekly span (e.g. "a weekend") that no
- * one hard-blocks. Candidates exist once per week, anchored to `anchorDow`.
- * Work/school come back as conflicts to review — though with a Friday 17:00
+ * Find the *best* occurrence of a weekly span (e.g. "a weekend"): scored the
+ * same way findBestDaySpan scores a vacation. Candidates exist once per
+ * week, anchored to `anchorDow`; a hard block (someone away the whole
+ * weekend) rules a candidate out outright. Among the rest, the one needing
+ * the least time off wins — fewest conflicted people, then fewest
+ * conflicted events, then earliest — so a later weekend nobody has to take
+ * time off for beats an earlier one two people would. With a Friday 17:00
  * start, a normal workday has already ended and only genuine overlaps
- * (overtime, weekend shifts) surface.
+ * (overtime, weekend shifts) surface as conflicts at all.
  */
 export function findWeeklySpan(
   participants: Participant[],
@@ -613,6 +618,10 @@ export function findWeeklySpan(
     anchor = addDays(anchor, 1, timeZone);
   }
 
+  let best: MultiDayResult | null = null;
+  let bestPeople = Infinity;
+  let bestEvents = Infinity;
+
   for (; ; anchor = addDays(anchor, 7, timeZone)) {
     const spanStart = atHour(anchor, shape.startHour, timeZone);
     const lastDay = addDays(anchor, shape.spanDays - 1, timeZone);
@@ -624,12 +633,20 @@ export function findWeeklySpan(
     );
     if (blocked) continue;
 
-    return {
-      slot: { start: iso(spanStart), end: iso(spanEnd) },
-      conflicts: collectSoftConflicts(participants, spanStart, spanEnd),
-    };
+    const conflicts = collectSoftConflicts(participants, spanStart, spanEnd);
+    if (conflicts.length === 0) {
+      // Fully free, and nothing earlier could have been: nothing can beat it.
+      return { slot: { start: iso(spanStart), end: iso(spanEnd) }, conflicts };
+    }
+
+    const events = conflicts.reduce((sum, c) => sum + c.events.length, 0);
+    if (conflicts.length < bestPeople || (conflicts.length === bestPeople && events < bestEvents)) {
+      best = { slot: { start: iso(spanStart), end: iso(spanEnd) }, conflicts };
+      bestPeople = conflicts.length;
+      bestEvents = events;
+    }
   }
-  return noSpan();
+  return best ?? noSpan();
 }
 
 /* ----------------------------------------------------------------------------

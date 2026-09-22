@@ -13,7 +13,6 @@ import {
   Hourglass,
   Lightbulb,
   Plus,
-  RefreshCw,
   Sparkles,
   Tag,
 } from "lucide-react";
@@ -180,6 +179,41 @@ function nameList(names: string[]): string {
   return `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`;
 }
 
+/**
+ * Step back and forward through the recommended times found this session.
+ * Back only replays what's already been seen (never searches); forward
+ * searches for the next occurrence once it runs past what's cached.
+ */
+function FindStepper({
+  canGoBack,
+  onPrev,
+  onNext,
+}: {
+  canGoBack: boolean;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  return (
+    <div className="inline-flex items-center divide-x overflow-hidden rounded-lg border bg-card">
+      <button
+        onClick={onPrev}
+        disabled={!canGoBack}
+        aria-label="Previous recommended time"
+        className="flex h-9 w-9 items-center justify-center text-foreground transition hover:bg-secondary disabled:pointer-events-none disabled:opacity-30"
+      >
+        <ChevronLeft className="h-4 w-4" />
+      </button>
+      <button
+        onClick={onNext}
+        aria-label="Next recommended time"
+        className="flex h-9 w-9 items-center justify-center text-foreground transition hover:bg-secondary"
+      >
+        <ChevronRight className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
 export default function FindDate() {
   const [copied, setCopied] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
@@ -194,9 +228,16 @@ export default function FindDate() {
   // Multi-day spans with work/school conflicts need the user's sign-off; this
   // holds the slot start they accepted (null = nothing accepted yet).
   const [acceptedSlot, setAcceptedSlot] = useState<string | null>(null);
-  // Where to start searching from. null = "from today"; "Find new time" bumps it
-  // forward to surface the next slot after the current one.
-  const [searchFrom, setSearchFrom] = useState<string | null>(null);
+  // The search anchors visited this "session": history[0] is the first result
+  // (from today), and each later entry is the next occurrence past the one
+  // before it. historyIndex is which one is on screen; the back/forward
+  // arrows just move it, only searching for a new entry when stepping past
+  // the end. Empty (-1) means nothing has been searched yet — changing any
+  // setting resets to this, so the engine only ever runs when asked to.
+  const [history, setHistory] = useState<(string | null)[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const hasSearched = historyIndex >= 0;
+  const searchFrom = hasSearched ? history[historyIndex] : null;
   // Which month the calendar shows (first-of-month ms), and which way it slides.
   const [viewMonth, setViewMonth] = useState(DEFAULT_MONTH);
   const [slideDir, setSlideDir] = useState(1);
@@ -401,8 +442,13 @@ export default function FindDate() {
   }, [eventType, activeGroup, multiResult, days, searchFrom]);
 
   // Whichever search is active (single meeting vs multi-day span), the slot it
-  // found drives the calendar highlight and the banner.
-  const activeSlot = (isMultiDay ? multiResult?.slot : result?.slot) ?? null;
+  // found drives the calendar highlight and the banner — but only once asked
+  // for. Before that, result/multiResult are still computed underneath (a
+  // cheap, pure function of whatever the settings currently are), just not
+  // surfaced: nothing highlights or appears until "Find best time" is pressed.
+  const activeSlot = hasSearched
+    ? ((isMultiDay ? multiResult?.slot : result?.slot) ?? null)
+    : null;
 
   // The day (local-midnight ISO) containing the best slot, for highlighting.
   const bestDay = activeSlot ? dayOf(activeSlot.start, TZ) : null;
@@ -413,24 +459,37 @@ export default function FindDate() {
     activeSlot && !isMultiDay ? formatTime(activeSlot.start) : null;
 
   /**
-   * Changing any setting re-anchors the search to today and drops a previous
-   * approval — the dates it applied to are no longer the dates on offer.
+   * Changing any setting clears the search entirely: nothing is shown again
+   * until "Find best time" is pressed, rather than a new result silently
+   * appearing for whatever was just changed.
    */
-  function resetSearch(from: string | null = null) {
-    setSearchFrom(from);
+  function clearSearch() {
+    setHistory([]);
+    setHistoryIndex(-1);
     setAcceptedSlot(null);
+  }
+
+  /** Start a fresh search from `from` (null = today) and reveal its result. */
+  function runSearch(from: string | null) {
+    setHistory([from]);
+    setHistoryIndex(0);
+    setAcceptedSlot(null);
+    setRevealRequest((n) => n + 1);
   }
 
   /** Adopt a suggested workaround: shorter stay, anchored on its dates. */
   function applySuggestion(s: VacationSuggestion) {
     setDays(s.days);
-    resetSearch(dayOf(s.slot.start, TZ));
-    revealDay(dayOf(s.slot.start, TZ));
+    const anchor = dayOf(s.slot.start, TZ);
+    setHistory([anchor]);
+    setHistoryIndex(0);
+    setAcceptedSlot(null);
+    revealDay(anchor);
   }
 
   function handleSelectGroup(id: string) {
     setSelectedGroupId(id);
-    resetSearch(); // re-anchor to the earliest slot for the new group
+    clearSearch(); // a new group's best time is unknown until searched for
     setSlideDir(-1);
     setViewMonth(DEFAULT_MONTH); // show the new group from the current month
     inviteMutation.reset(); // a link belongs to the group it was made for
@@ -461,7 +520,7 @@ export default function FindDate() {
       setStartHour(t.startHour ?? 18);
     }
     setSelectedDows(t.defaultDows ?? ALL_DOWS);
-    resetSearch();
+    clearSearch();
   }
 
   function handleDows(dows: number[]) {
@@ -473,22 +532,22 @@ export default function FindDate() {
       next = ALL_DOWS.slice(idxs[0], idxs[idxs.length - 1] + 1);
     }
     setSelectedDows(next);
-    resetSearch();
+    clearSearch();
   }
 
   function handleDuration(value: number) {
     setDurationMinutes(value);
-    resetSearch();
+    clearSearch();
   }
 
   function handleStartHour(value: number) {
     setStartHour(value);
-    resetSearch();
+    clearSearch();
   }
 
   function handleDays(value: number) {
     setDays(value);
-    resetSearch();
+    clearSearch();
   }
 
   /**
@@ -526,17 +585,34 @@ export default function FindDate() {
     setViewMonth(month);
   }
 
-  /** Re-find the earliest slot from today and page the calendar to it. */
+  /** Find the earliest slot from today and page the calendar to it. */
   function handleFindBest() {
-    resetSearch();
+    runSearch(null);
+  }
+
+  /**
+   * Step forward: if the next occurrence was already searched for earlier
+   * this session (the user stepped back), just reveal it again; otherwise
+   * search past the current slot's day for it.
+   */
+  function handleFindNext() {
+    if (!activeSlot) return;
+    if (historyIndex + 1 < history.length) {
+      setHistoryIndex(historyIndex + 1);
+    } else {
+      const nextDay = addDays(Date.parse(activeSlot.start), 1, TZ);
+      setHistory((h) => [...h, new Date(nextDay).toISOString()]);
+      setHistoryIndex(historyIndex + 1);
+    }
+    setAcceptedSlot(null);
     setRevealRequest((n) => n + 1);
   }
 
-  /** Advance the search past the current slot's day to surface the next one. */
-  function handleFindNew() {
-    if (!activeSlot) return;
-    const nextDay = addDays(Date.parse(activeSlot.start), 1, TZ);
-    resetSearch(new Date(nextDay).toISOString());
+  /** Step back to the occurrence shown just before this one. Never searches. */
+  function handleFindPrev() {
+    if (historyIndex <= 0) return;
+    setHistoryIndex(historyIndex - 1);
+    setAcceptedSlot(null);
     setRevealRequest((n) => n + 1);
   }
 
@@ -591,22 +667,12 @@ export default function FindDate() {
 
       {/*
         A working page, not a poster: the calendar is what people came for, so
-        it starts near the top of the screen and takes the full width. The
-        pitch is one small line above it, and everything you set before
-        searching lives in the column beside it rather than stacked on top,
-        which is what used to push the calendar below the fold.
+        it starts at the very top of the screen and takes the full width.
+        Everything you set before searching lives in the column beside it
+        rather than stacked on top, which is what used to push the calendar
+        below the fold.
       */}
       <div className="px-4 pb-16 pt-4 sm:px-6 lg:px-8">
-        <header className="mb-4">
-          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-            Find a time to meet.
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Casy syncs everyone's calendars and finds the earliest window that works for your
-            whole group, automatically.
-          </p>
-        </header>
-
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
           {/* ───────── Controls: who, and what kind of event ───────── */}
           <aside
@@ -635,7 +701,7 @@ export default function FindDate() {
                   <span className="text-sm font-medium text-muted-foreground">
                     What kind of event
                   </span>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
                     <Dropdown
                       icon={<Tag className="h-3.5 w-3.5 text-muted-foreground" />}
                       value={eventTypeIdx}
@@ -672,11 +738,7 @@ export default function FindDate() {
                       covered by the trip. Vacations span any days, so none there. */}
                   {eventType.kind !== "vacation" && (
                     <div className="mt-3">
-                      <DaySlider
-                        selected={selectedDows}
-                        onChange={handleDows}
-                        zoneLabel={eventType.kind === "trip" ? "Trip days" : "Searching"}
-                      />
+                      <DaySlider selected={selectedDows} onChange={handleDows} />
                     </div>
                   )}
                 </div>
@@ -719,22 +781,17 @@ export default function FindDate() {
             onFocusCapture={stopCarousel}
             className="min-w-0 flex-1 scroll-mt-4 rounded-2xl border bg-card p-5 shadow-xl shadow-black/5 sm:p-6"
           >
-            {/* Card header: which month is on screen, and the two actions. */}
+            {/* Card header: which group this is, and the two actions. Only a
+                label here — switching groups happens in the box to the
+                left, not in the calendar view. */}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
-                {groups && activeGroupId ? (
-                  <GroupSwitcher
-                    groups={groups}
-                    selectedId={activeGroupId}
-                    onChange={handleSelectGroup}
-                    onCreate={handleNewGroup}
-                    variant="title"
-                  />
+                {activeGroup ? (
+                  <h2 className="truncate text-2xl font-bold text-foreground">
+                    {activeGroup.name}
+                  </h2>
                 ) : (
                   <h2 className="text-2xl font-bold text-foreground">Loading…</h2>
-                )}
-                {monthGrid && (
-                  <p className="text-sm text-muted-foreground">{monthGrid.label}</p>
                 )}
               </div>
               <div className="flex items-center gap-2">
@@ -759,11 +816,110 @@ export default function FindDate() {
               </div>
             </div>
 
-            {/* Best-time banner. Single meetings: found / not found. Multi-day
-                spans add two review states — your own work/school needs your
-                approval, other people's puts the dates under review. */}
+            {/* Which month the grid below is showing. Sits right above it
+                (nothing between the two), so there's never a question which
+                month is on screen. */}
+            {monthGrid && (
+              <p className="mt-4 text-base font-semibold text-foreground">
+                {monthGrid.label}
+              </p>
+            )}
+
+            {/* Apple-style month calendar */}
+            <div className="mt-2">
+              <div className="relative">
+                <div className="overflow-hidden rounded-xl">
+                  <AnimatePresence mode="popLayout" custom={slideDir} initial={false}>
+                    <motion.div
+                      key={viewMonth}
+                      custom={slideDir}
+                      variants={calendarSlide}
+                      initial="enter"
+                      animate="center"
+                      exit="exit"
+                      transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+                    >
+                      {/* Cross-fade when the group changes: both calendars sit
+                          in one grid cell, so the old one fades out under the
+                          new one instead of the page collapsing to nothing. */}
+                      <div className="grid [&>*]:col-start-1 [&>*]:row-start-1">
+                        <AnimatePresence initial={false}>
+                          <motion.div
+                            key={activeGroupId ?? "none"}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0, pointerEvents: "none" }}
+                            transition={{ duration: 0.5, ease: "easeInOut" }}
+                          >
+                            {monthGrid && (
+                              <CalendarPanel
+                                grid={monthGrid}
+                                bestDay={bestDay}
+                                bestSpanDays={bestSpanDays}
+                                bestTimeLabel={bestTimeLabel}
+                                todayDay={TODAY_DAY}
+                                timeZone={TZ}
+                              />
+                            )}
+                          </motion.div>
+                        </AnimatePresence>
+                      </div>
+                    </motion.div>
+                  </AnimatePresence>
+                </div>
+
+                {/* Month nav arrows, pinned to a fixed height on the calendar's
+                    left/right edges. Anchored to a constant offset rather than
+                    top-1/2: months render 5 or 6 week rows, so centering on
+                    the grid's own (variable) height made the arrows hop up
+                    and down every time that row count changed between months. */}
+                <button
+                  onClick={() => pageMonth(-1)}
+                  disabled={viewMonth <= MIN_MONTH}
+                  aria-label="Previous month"
+                  className="absolute left-0 top-8 z-20 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border bg-card text-foreground shadow-md transition hover:bg-secondary disabled:pointer-events-none disabled:opacity-30"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+                <button
+                  onClick={() => pageMonth(1)}
+                  disabled={viewMonth >= MAX_MONTH}
+                  aria-label="Next month"
+                  className="absolute right-0 top-8 z-20 flex h-9 w-9 translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border bg-card text-foreground shadow-md transition hover:bg-secondary disabled:pointer-events-none disabled:opacity-30"
+                >
+                  <ChevronRight className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Legend */}
+              <div className="mt-3 flex flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground">
+                <span>Fewer free</span>
+                {[0.2, 0.45, 0.7, 1].map((a) => (
+                  <span
+                    key={a}
+                    className="h-3 w-5 rounded-sm"
+                    style={{ backgroundColor: `rgba(${ACCENT_RGB}, ${a})` }}
+                  />
+                ))}
+                <span>More free</span>
+                {isMultiDay && (
+                  <>
+                    <span
+                      className="ml-3 h-3 w-5 rounded-sm"
+                      style={{ backgroundColor: `rgba(${AMBER_RGB}, 0.5)` }}
+                    />
+                    <span>free only with time off</span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Best-time banner, under the calendar. Single meetings: found /
+                not found. Multi-day spans add two review states — your own
+                work/school needs your approval, other people's puts the
+                dates under review. */}
             <AnimatePresence>
-              {(isMultiDay ? multiResult : result) && (
+              {hasSearched && (isMultiDay ? multiResult : result) && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}
@@ -821,13 +977,11 @@ export default function FindDate() {
                           <Check className="h-4 w-4" />
                           Accept
                         </button>
-                        <button
-                          onClick={handleFindNew}
-                          className="inline-flex items-center gap-1.5 rounded-lg border bg-card px-3 py-2 text-sm font-medium text-foreground transition hover:bg-secondary"
-                        >
-                          <RefreshCw className="h-4 w-4" />
-                          Find new date
-                        </button>
+                        <FindStepper
+                          canGoBack={historyIndex > 0}
+                          onPrev={handleFindPrev}
+                          onNext={handleFindNext}
+                        />
                       </div>
                     </div>
                   ) : isMultiDay && otherConflicts.length > 0 ? (
@@ -851,13 +1005,11 @@ export default function FindDate() {
                           </p>
                         </div>
                       </div>
-                      <button
-                        onClick={handleFindNew}
-                        className="inline-flex items-center gap-1.5 rounded-lg border bg-card px-3 py-2 text-sm font-medium text-foreground transition hover:bg-secondary"
-                      >
-                        <RefreshCw className="h-4 w-4" />
-                        Find new date
-                      </button>
+                      <FindStepper
+                        canGoBack={historyIndex > 0}
+                        onPrev={handleFindPrev}
+                        onNext={handleFindNext}
+                      />
                     </div>
                   ) : (
                     <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/30 bg-primary/5 p-4">
@@ -879,13 +1031,11 @@ export default function FindDate() {
                           )}
                         </div>
                       </div>
-                      <button
-                        onClick={handleFindNew}
-                        className="inline-flex items-center gap-1.5 rounded-lg border bg-card px-3 py-2 text-sm font-medium text-foreground transition hover:bg-secondary"
-                      >
-                        <RefreshCw className="h-4 w-4" />
-                        {isMultiDay ? "Find new date" : "Find new time"}
-                      </button>
+                      <FindStepper
+                        canGoBack={historyIndex > 0}
+                        onPrev={handleFindPrev}
+                        onNext={handleFindNext}
+                      />
                     </div>
                   )}
 
@@ -936,91 +1086,6 @@ export default function FindDate() {
                 </motion.div>
               )}
             </AnimatePresence>
-
-            {/* Apple-style month calendar */}
-            <div className="mt-4">
-              <div className="relative">
-                <div className="overflow-hidden rounded-xl">
-                  <AnimatePresence mode="popLayout" custom={slideDir} initial={false}>
-                    <motion.div
-                      key={viewMonth}
-                      custom={slideDir}
-                      variants={calendarSlide}
-                      initial="enter"
-                      animate="center"
-                      exit="exit"
-                      transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-                    >
-                      {/* Cross-fade when the group changes: both calendars sit
-                          in one grid cell, so the old one fades out under the
-                          new one instead of the page collapsing to nothing. */}
-                      <div className="grid [&>*]:col-start-1 [&>*]:row-start-1">
-                        <AnimatePresence initial={false}>
-                          <motion.div
-                            key={activeGroupId ?? "none"}
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0, pointerEvents: "none" }}
-                            transition={{ duration: 0.5, ease: "easeInOut" }}
-                          >
-                            {monthGrid && (
-                              <CalendarPanel
-                                grid={monthGrid}
-                                bestDay={bestDay}
-                                bestSpanDays={bestSpanDays}
-                                bestTimeLabel={bestTimeLabel}
-                                todayDay={TODAY_DAY}
-                                timeZone={TZ}
-                              />
-                            )}
-                          </motion.div>
-                        </AnimatePresence>
-                      </div>
-                    </motion.div>
-                  </AnimatePresence>
-                </div>
-
-                {/* Month nav arrows, centred on the calendar's left/right edges */}
-                <button
-                  onClick={() => pageMonth(-1)}
-                  disabled={viewMonth <= MIN_MONTH}
-                  aria-label="Previous month"
-                  className="absolute left-0 top-1/2 z-20 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border bg-card text-foreground shadow-md transition hover:bg-secondary disabled:pointer-events-none disabled:opacity-30"
-                >
-                  <ChevronLeft className="h-5 w-5" />
-                </button>
-                <button
-                  onClick={() => pageMonth(1)}
-                  disabled={viewMonth >= MAX_MONTH}
-                  aria-label="Next month"
-                  className="absolute right-0 top-1/2 z-20 flex h-9 w-9 translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border bg-card text-foreground shadow-md transition hover:bg-secondary disabled:pointer-events-none disabled:opacity-30"
-                >
-                  <ChevronRight className="h-5 w-5" />
-                </button>
-              </div>
-
-              {/* Legend */}
-              <div className="mt-3 flex flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground">
-                <span>Fewer free</span>
-                {[0.2, 0.45, 0.7, 1].map((a) => (
-                  <span
-                    key={a}
-                    className="h-3 w-5 rounded-sm"
-                    style={{ backgroundColor: `rgba(${ACCENT_RGB}, ${a})` }}
-                  />
-                ))}
-                <span>More free</span>
-                {isMultiDay && (
-                  <>
-                    <span
-                      className="ml-3 h-3 w-5 rounded-sm"
-                      style={{ backgroundColor: `rgba(${AMBER_RGB}, 0.5)` }}
-                    />
-                    <span>free only with time off</span>
-                  </>
-                )}
-              </div>
-            </div>
 
             {/* Group members */}
             <div className="mt-6">

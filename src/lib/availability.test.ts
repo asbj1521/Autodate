@@ -608,12 +608,52 @@ describe("findWeeklySpan", () => {
     const alice = makeCategorised("Alice", [
       ["2026-06-26T17:00:00.000Z", "2026-06-26T20:00:00.000Z", "Overarbejde", "work"],
     ]);
+    // Narrowed so the only candidate weekend is the conflicted one: this
+    // confirms overtime is returned with a flagged conflict rather than
+    // ruling the weekend out, not that it's the preferred pick.
+    const NARROW_END = "2026-06-29T00:00:00.000Z";
 
-    const { slot, conflicts } = findWeeklySpan([alice], WEEKEND, START, END, TZ);
+    const { slot, conflicts } = findWeeklySpan([alice], WEEKEND, START, NARROW_END, TZ);
 
     expect(slot?.start).toBe("2026-06-26T17:00:00.000Z");
     expect(conflicts).toHaveLength(1);
     expect(conflicts[0].events[0].title).toBe("Overarbejde");
+  });
+
+  it("prefers a fully free later weekend over an earlier one with a conflict", () => {
+    // Alice has Friday overtime on the first weekend only; the second and
+    // third are completely clear. The earliest weekend is no longer good
+    // enough on its own — a later, fully free one beats it.
+    const alice = makeCategorised("Alice", [
+      ["2026-06-26T17:00:00.000Z", "2026-06-26T20:00:00.000Z", "Overarbejde", "work"],
+    ]);
+
+    const { slot, conflicts } = findWeeklySpan([alice], WEEKEND, START, END, TZ);
+
+    expect(slot?.start).toBe("2026-07-03T17:00:00.000Z");
+    expect(conflicts).toEqual([]);
+  });
+
+  it("when no weekend is fully free, picks the one fewer people have to take time off for", () => {
+    // Both Alice and Bob work overtime the first Friday; only Alice does on
+    // the second. Neither weekend is clean, so the one with fewer affected
+    // people wins even though it's later.
+    const alice = makeCategorised("Alice", [
+      ["2026-06-26T17:00:00.000Z", "2026-06-26T20:00:00.000Z", "Overarbejde", "work"],
+      ["2026-07-03T17:00:00.000Z", "2026-07-03T20:00:00.000Z", "Overarbejde", "work"],
+    ]);
+    const bob = makeCategorised("Bob", [
+      ["2026-06-26T17:00:00.000Z", "2026-06-26T20:00:00.000Z", "Overtime", "work"],
+    ]);
+    // Narrowed to just the first two weekends, so there is no third,
+    // fully-free option to overshadow the "fewest people" comparison.
+    const NARROW_END = "2026-07-06T00:00:00.000Z";
+
+    const { slot, conflicts } = findWeeklySpan([alice, bob], WEEKEND, START, NARROW_END, TZ);
+
+    expect(slot?.start).toBe("2026-07-03T17:00:00.000Z");
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0].name).toBe("Alice");
   });
 
   it("skips a weekend someone is away and takes the next one", () => {
